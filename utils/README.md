@@ -95,7 +95,7 @@ The `ScanThreshold` class is designed to analyze waveforms by detecting threshol
 
 ---
 
-## How These Classes Are Useful
+## What is the usefulness of classes?
 
 - **Filtering:**  
   By applying lowpass, highpass, or notch filters, you can pre-process your waveform data to remove noise, drift, or specific interference frequencies. This improves the quality of your signal analysis and helps in obtaining cleaner, more reliable waveforms.
@@ -105,4 +105,3 @@ The `ScanThreshold` class is designed to analyze waveforms by detecting threshol
 
 ---
 
-This README provides a detailed explanation of the two main classes included in the repository. They can be integrated into larger analysis pipelines or used as standalone tools for specific waveform processing tasks.
