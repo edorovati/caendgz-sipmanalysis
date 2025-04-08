@@ -68,11 +68,11 @@ print("\n" + "="*80)
 print(Fore.CYAN + "Data Loading Section" + Style.RESET_ALL)
 print("="*80 + "\n")
 data = np.load(args.npz)
-if "waveform_ch1" not in data:
+if "waveforms" not in data:
     print(Fore.RED + f"Error: {args.npz} file not found or missing 'waveform_ch1'." + Style.RESET_ALL)
     exit()
 print(Fore.GREEN + "File loaded successfully!" + Style.RESET_ALL)
-waveforms = data["waveform_ch1"].squeeze()
+waveforms = data["waveforms"].squeeze()
 ##########################################################################
 
 filter_obj = Filter(SAMPLING_RATE)
