@@ -85,7 +85,7 @@ python3 transitions.py --npz <filename.npz> --scanthr --range <min-max or "singl
 ```
 
 ## Project Structure
-
+caendgz-sipmanalysis
 ├── transitions.py          # Main script for waveform analysis
 ├── README.md               # Project documentation and guide
 └── utils/
