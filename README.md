@@ -85,6 +85,9 @@ python3 transitions.py --npz <filename.npz> --scanthr --range <min-max or "singl
 ```
 
 ## Project Structure
+Here, depicted a brief schematics of folder: 
+
+```bash 
 caendgz-sipmanalysis
 ├── transitions.py          # Main script for waveform analysis
 ├── README.md               # Project documentation and guide
@@ -92,7 +95,7 @@ caendgz-sipmanalysis
     ├── filters.py          # Implementation of filters (lowpass, highpass, notch)
     ├── plotter.py          # Functions for waveform visualization
     └── scanthr.py          # Functions for threshold scanning
-
+```
 
 
 
