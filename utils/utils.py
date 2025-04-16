@@ -22,9 +22,6 @@ class Utils:
     @staticmethod
     def generate_output_filename(npz_filename: str) -> str:
         """
-        Generates an output filename in the format '[delta]OV.txt' based on the voltage value
-        embedded in the input `.npz` filename. The voltage is compared against a fixed reference of 51.5V.
-
         Args:
             npz_filename (str): Name of the input .npz file (e.g., 'waveforms_750.0_52V.npz').
 
