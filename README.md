@@ -1,4 +1,4 @@
-# Waveform Analysis 
+# Waveform Analysis  (TODO update read me)
 
 This repository contains a study of SiPM signals acquired from Caen digitizers. The tool not only applies various filters (lowpass, highpass, and notch) to clean the signals but also visualizes the waveforms and performs a threshold scan. The threshold scan is carried out versus the threshold value in mV, allowing you to analyze the hit rate (Hz) at different threshold levels.
 
