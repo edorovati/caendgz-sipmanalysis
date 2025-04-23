@@ -36,7 +36,8 @@ class ScanThreshold:
     def __init__(self):
         pass
 
-    def get_transitions(self, waveform_mv, threshold, sign):
+    @staticmethod
+    def get_transitions(waveform_mv: np.ndarray, threshold: float, sign: int) -> list[int]:
         """
         :param waveform_mv: The waveform data as a numpy array (in millivolts).
         :param threshold: The threshold level (in millivolts) to detect crossings.
@@ -57,7 +58,7 @@ class ScanThreshold:
             armed = False
         return transitions
 
-    def scan_thresholds(self, waveforms_mv, sign, range_min, range_max, step, output_file):
+    def scan_thresholds(self, waveforms_mv: list[np.ndarray], sign: int, range_min: float, range_max: float, step: float, output_file: str):
         """
         :param waveforms_mv: Array of waveforms already in mV.
         :param sign: Direction of threshold (+1 or -1).
