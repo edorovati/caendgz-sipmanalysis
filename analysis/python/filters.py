@@ -26,14 +26,14 @@ from scipy.signal import butter, filtfilt, iirnotch
 ########################################################################################
 
 class Filter:
-    def __init__(self, sampling_rate):
+    def __init__(self, sampling_rate: float):
         """
         :param sampling_rate: Sampling rate of the waveform in Hz (e.g., 5e9 for 5 GS/s).
         """
         self.sampling_rate = sampling_rate
         self.nyquist = 0.5 * self.sampling_rate
 
-    def lowpass(self, waveform, cutoff_freq, order=4):
+    def lowpass(self, waveform: np.ndarray, cutoff_freq: float, order: int = 4) -> np.ndarray:
         """
         :param waveform: The waveform data to filter.
         :param cutoff_freq: The cutoff frequency (in Hz) for the lowpass filter.
@@ -44,7 +44,7 @@ class Filter:
         b, a = butter(order, normal_cutoff, btype="low")
         return filtfilt(b, a, waveform)
 
-    def highpass(self, waveform, cutoff_freq, order=4):
+    def highpass(self, waveform: np.ndarray, cutoff_freq: float, order: int = 4) -> np.ndarray:
         """
         :param waveform: The waveform data to filter.
         :param cutoff_freq: The cutoff frequency (in Hz) for the highpass filter.
@@ -55,7 +55,7 @@ class Filter:
         b, a = butter(order, normal_cutoff, btype="high")
         return filtfilt(b, a, waveform)
 
-    def notch(self, waveform, notch_freq, q_factor=30):
+    def notch(self, waveform: np.ndarray, notch_freq: float, q_factor: float = 30) -> np.ndarray:
         """
         :param waveform: The waveform data to filter.
         :param notch_freq: The frequency (in Hz) to be attenuated.
