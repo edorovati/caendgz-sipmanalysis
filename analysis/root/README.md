@@ -10,7 +10,7 @@ Classes Overview
 1. Analysis        - Signal fitting, threshold counting, CT/DCR ratio, dark rate.
 2. GraphicsUtils   - Styling and drawing utilities for ROOT graphs.
 3. Utils           - File I/O, interpolation, graph creation, derivatives, etc.
-
+4. ColorPaletteManager - Color mappings based on several conditions.
 
 Analysis Class (analysis.h)
 ====================================
@@ -82,4 +82,12 @@ A set of helper functions for numerical processing and ROOT I/O.
 
 ▸ `writeGraphTTree(graph, name)`
    → Writes a TGraphErrors into the current ROOT file
+
+
+ColorPaletteManager Class (colorpalettemanager.h)
+================================================
+A utility class providing color mappings based on different cases
+
+▸ `getColorFromOvervoltage(overvoltage)`
+   → Returns a color corresponding to the given overvoltage value. 
 
