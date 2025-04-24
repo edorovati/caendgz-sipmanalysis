@@ -102,19 +102,21 @@ public:
 /// @return True if file was opened and read successfully; false otherwise.
 // ------------------------------------------------------------------------------------ //
     static bool readDataFile(const TString &fullPath,
-                             std::vector<double> &soglie,
-                             std::vector<double> &conteggi)
+                             std::vector<double> &colonna1,
+                             std::vector<double> &colonna2)
     {
         std::ifstream infile(fullPath.Data());
         if (!infile.is_open()) {
             std::cerr << "Error opening file: " << fullPath.Data() << std::endl;
             return false;
         }
-        double soglia;
-        int conteggio;
-        while (infile >> soglia >> conteggio) {
-            soglie.push_back(soglia);
-            conteggi.push_back(conteggio);
+        std::string line;
+        std::getline(infile, line);
+        double col1;
+        int col2;
+        while (infile >> col1 >> col2) {
+            colonna1.push_back(col1);
+            colonna2.push_back(col2);
         }
         infile.close();
         return true;
@@ -216,4 +218,4 @@ public:
 // ------------------------------------------------------------------------------------ //
 };
 
-#endif
+#endif // UTILS_H
