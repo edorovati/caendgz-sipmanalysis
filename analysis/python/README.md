@@ -1,4 +1,4 @@
-## General Classes
+# General Classes
 
 This repository provides three key classes:
 
