@@ -5,19 +5,20 @@
  *
  * This script performs the following operations:
  *   - Reads data files containing waveform information.
+ *   - Subtracts 0OV baseline measurements.
  *   - Computes derivatives of the data to identify peaks.
  *   - Fits a Gaussian to the data and calculates the dark count rate (DCR) and
  *     cross-talk (CT) ratio.
  *   - Dynamically assigns colors to graphs based on overvoltage values.
  *   - Outputs the results to a ROOT file, including graphs and information about
  *     overvoltages, counts, errors, DCR, and CT ratios.
- *
  ******************************************************************************/
 
 #include "../../root/analysis.h"
 #include "../../root/graphics.h"
 #include "../../root/utils.h"
 #include "../../root/colorpalettemanager.h"
+
 #include <TCanvas.h>
 #include <TFile.h>
 #include <TGraphErrors.h>
@@ -33,6 +34,7 @@
 #include <TSystemDirectory.h>
 #include <TSystemFile.h>
 #include <TTree.h>
+
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -49,6 +51,7 @@ struct LegendEntry {
   int color;
   TGraphErrors *graph;
 };
+
 std::vector<LegendEntry> legendEntries;
 
 // ----------------------------------------------------------------------------
@@ -60,20 +63,20 @@ void dcr() {
 
   // Set up directory for file scanning
   TSystemDirectory dir("Scan", "Scan");
-  TMultiGraph *mgOrig = new TMultiGraph();  // MultiGraph for original data
-  std::vector<double> allOvervoltages;     // List of all overvoltages
+  TMultiGraph *mgOrig = new TMultiGraph();
+  std::vector<double> allOvervoltages;
 
-  // Create output directory and tree for storing results
+  // Create output directory and tree
   outFile->mkdir("Summary");
   outFile->cd("Summary");
+
   TTree *infoTree = new TTree("Info", "Information on overvoltages [current cycle]");
-  
-  // Define variables to store information for each overvoltage
+
+  // Variables for TTree
   double ov, pe, std, peErr, stdErr, DCR, CT, reducedChi2;
   double DCR_Error, CT_Error;
-  int colorIndex = 0;
 
-  // Create branches for storing data in the tree
+  // Create branches
   infoTree->Branch("overvoltage", &ov, "overvoltage/D");
   infoTree->Branch("pe", &pe, "pe/D");
   infoTree->Branch("stdDev", &std, "stdDev/D");
@@ -84,124 +87,135 @@ void dcr() {
   infoTree->Branch("DCR_Error", &DCR_Error, "DCR_Error/D");
   infoTree->Branch("CT_Error", &CT_Error, "CT_Error/D");
 
-  // Scan files in the "Scan" directory
+  // --- First, read the 0OV baseline ---
+  std::vector<double> thresholds0V, counts0V;
+  bool baselineAvailable = Utils::readDataFile("Scan/0OV.txt", thresholds0V, counts0V);
+
+  if (!baselineAvailable) {
+    std::cerr << "WARNING: 0OV.txt baseline not found! Continuing without baseline subtraction." << std::endl;
+  }
+
+  std::vector<double> errors0V;
+  if (baselineAvailable) {
+    for (auto c : counts0V) {
+      errors0V.push_back(sqrt(c));
+    }
+  }
+
+  // --- Now, read all OV files ---
   TList *files = dir.GetListOfFiles();
   if (!files) {
     std::cerr << "No files found in the Scan folder!" << std::endl;
     return;
   }
 
-  // Loop over all files in the directory
   TSystemFile *fileItem = nullptr;
   TIter next(files);
   while ((fileItem = (TSystemFile *)next())) {
     TString fname = fileItem->GetName();
-    if (fileItem->IsDirectory() || fname.BeginsWith(".") || fname == "0OV.txt")
+
+    if (fileItem->IsDirectory() || fname.BeginsWith("."))
       continue;
     if (!fname.Contains("OV") || !fname.EndsWith(".txt"))
       continue;
-
-    std::vector<double> thresholds;     // Threshold values
-    std::vector<double> counts;   // Count values
-
-    // Read data from the file
-    if (!Utils::readDataFile(TString("Scan/") + fname, thresholds, counts))
-      continue;
-    
-    int N = thresholds.size();
-    if (N == 0)
+    if (fname == "0OV.txt")  // Skip baseline (already loaded)
       continue;
 
-    // Extract overvoltage from the filename
+    std::vector<double> thresholds, counts;
+    if (!Utils::readDataFile("Scan/" + fname, thresholds, counts))
+      continue;
+
+    if (thresholds.empty())
+      continue;
+
+    // Extract overvoltage value
     double overvoltage = Utils::extractOvervoltage(fname);
-    if (overvoltage != 0.0) {
-      allOvervoltages.push_back(overvoltage);
-    }
+    allOvervoltages.push_back(overvoltage);
 
-    // Calculate error values
-    std::vector<double> yErrors;
+    // Prepare error arrays
+    std::vector<double> yErrors(counts.size());
     for (size_t i = 0; i < counts.size(); ++i) {
-      yErrors.push_back(sqrt(counts[i]));
+      yErrors[i] = sqrt(counts[i]);
     }
-    
-    // Define x-error as a fixed value
-    std::vector<double> xErrors(thresholds.size(), 0.25);
-    
-    // Create graphs for raw data and derivatives
-    TGraphErrors *gRawOrig = Utils::createGraph(thresholds, counts, xErrors, yErrors);
-    auto [sMedie, derivate, derivateErr] = Utils::computeDerivativeWithErrors(thresholds, counts, yErrors, false);
-    std::vector<double> xErrors_deriv(sMedie.size(), 0.0);
-    TGraphErrors *gDerivOrig = Utils::createGraph(sMedie, derivate, xErrors_deriv, derivateErr);
 
-    // Find peak index in the derivative
+    // --- Subtract 0V baseline if available ---
+    if (baselineAvailable && thresholds.size() == thresholds0V.size()) {
+      for (size_t i = 0; i < counts.size(); ++i) {
+        counts[i] -= counts0V[i];
+        yErrors[i] = sqrt(pow(yErrors[i], 2) + pow(errors0V[i], 2));
+      }
+    }
+
+    // Fixed X errors
+    std::vector<double> xErrors(thresholds.size(), 0.25);
+
+    // Create graphs
+    TGraphErrors *gRawOrig = Utils::createGraph(thresholds, counts, xErrors, yErrors);
+
+    // Derivative and derivative graph
+    auto [sMedie, derivate, derivateErr] = Utils::computeDerivativeWithErrors(thresholds, counts, yErrors, false);
+    TGraphErrors *gDerivOrig = Utils::createGraph(sMedie, derivate, std::vector<double>(sMedie.size(), 0.0), derivateErr);
+
+    // Find peak
     int peakIndex = Utils::findMaximum(sMedie, derivate, 6.0);
 
     if (peakIndex != -1) {
-      // Fit Gaussian to the derivative and calculate DCR and CT ratio
+      // Fit Gaussian
       std::tie(pe, std, peErr, stdErr, reducedChi2) = Analysis::fitGaussian(
-          gDerivOrig, sMedie[peakIndex] - 4.0, sMedie[peakIndex] + 4.0,
+          gDerivOrig, sMedie[peakIndex] - 0.5, sMedie[peakIndex] + 1.5,
           derivate[peakIndex], sMedie[peakIndex], 1.0);
+
+      // Calculate DCR and CT
       std::tie(DCR, DCR_Error) = Analysis::calculateCounts(thresholds, counts, 0.5 * pe);
       auto [CT_value, CT_error] = Analysis::calculateCounts(thresholds, counts, 1.5 * pe);
       std::tie(CT, CT_Error) = Analysis::calculateCTDCRRatio(DCR, DCR_Error, CT_value, CT_error);
-      
-      // Store data in the info tree
+
       ov = overvoltage;
       infoTree->Fill();
     }
 
-    // Assign color dynamically based on overvoltage value
+    // Set graph styles
     Int_t dynamicColor = ColorPaletteManager::getColorFromOvervoltage(overvoltage);
     GraphicsUtils::setGraphStyle(gRawOrig, 20, dynamicColor, 1);
-    ++colorIndex;
+    GraphicsUtils::setGraphStyle(gDerivOrig, 20, dynamicColor, 1);
 
-    // Set style for the derivative graph
-    GraphicsUtils::setGraphStyle(gDerivOrig, 20, gRawOrig->GetLineColor(), 1);
-
-    // Create subdirectory for storing graphs
+    // Write graphs
     TString dirName = fname;
     dirName.ReplaceAll(".txt", "");
     TDirectory *subDir = outFile->mkdir(dirName.Data());
     subDir->cd();
 
-    // Write graphs to ROOT file
     Utils::writeGraphTTree(gRawOrig, "gRaw");
     Utils::writeGraphTTree(gDerivOrig, "gDeriv");
     outFile->cd();
 
-    // Create legend entry
+    // Store legend
     TString legendLabel;
     legendLabel.Form("@ %.1f OV", overvoltage);
     gRawOrig->SetTitle(legendLabel.Data());
     mgOrig->Add(gRawOrig, "LPE");
 
-    // Add entry to legend
-    LegendEntry entry;
-    entry.overvoltage = overvoltage;
-    entry.label = legendLabel;
-    entry.color = dynamicColor;
-    entry.graph = gRawOrig;
+    LegendEntry entry = {overvoltage, legendLabel, dynamicColor, gRawOrig};
     legendEntries.push_back(entry);
   }
 
   // Create and style canvas
-  auto cOrig = GraphicsUtils::createCanvas("cOrig", "all curves", 800, 600, true);
+  auto cOrig = GraphicsUtils::createCanvas("cOrig", "All curves", 800, 600, true);
   GraphicsUtils::setAxisAndDraw(mgOrig, "Threshold (mV)", "Counts", true);
 
-  // Sort legend entries by overvoltage
+  // Sort legends
   std::sort(legendEntries.begin(), legendEntries.end(),
             [](const LegendEntry &a, const LegendEntry &b) {
               return a.overvoltage < b.overvoltage;
             });
 
-  // Create legend and draw it
   auto legOrig = GraphicsUtils::createLegend(0.7, 0.7, 0.89, 0.89);
   for (const auto &entry : legendEntries) {
     legOrig->AddEntry(entry.graph, entry.label.Data(), "pe");
   }
   legOrig->Draw();
 
-  // Write canvas to file
+  // Write everything
   cOrig->Write();
   outFile->Write();
   outFile->Close();
