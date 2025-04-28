@@ -77,6 +77,9 @@ A set of helper functions for numerical processing and ROOT I/O.
 ▸ `findMaximum(x, y, threshold)`
    → Returns the index of the maximum y-value beyond a threshold
 
+▸ `findLocalMaxima(y)`
+   → Finds the indices of local maxima in a vector of data
+
 ▸ `computeDerivativeWithErrors(x, y, yErr, correlation)`
    → Computes numerical derivative of y vs x, with error propagation
 
