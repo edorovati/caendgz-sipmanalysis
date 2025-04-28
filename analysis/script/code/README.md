@@ -43,11 +43,6 @@ Results saved in `output.root` (folder `Summary/` holds the TTree and graphs).
 ./dcr_plot
 ```
 
-It will print:
-```
-Grafici creati con successo!
-```
-
 ### 3. Waveform Visualization & Filtering
 ```bash
 # Display first 10 waveforms in mV, negative polarity, lowpass @200 MHz
