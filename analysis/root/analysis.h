@@ -71,7 +71,7 @@ public:
               double initialSigma) {
     TF1 *gausFit = new TF1("gausFit", "gaus", fitMin, fitMax);
     gausFit->SetParameters(initialAmplitude, initialMean, initialSigma);
-    graph->Fit(gausFit, "R");
+    graph->Fit(gausFit, "RQ+");
     double mean = gausFit->GetParameter(1);
     double std = gausFit->GetParameter(2);
     double meanErr = gausFit->GetParError(1);
