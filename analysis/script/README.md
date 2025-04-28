@@ -1,70 +1,49 @@
-# Dark Count Rate (DCR) and Waveform Analysis Toolkit
+# DCR – Dark count rate of Silicon PhotonMultiplier
 
-## Overview
-This repository provides a suite of tools for analyzing single-photon detector data and waveform transitions:
+Code for DCR analysis based on counts of peaks in waveforms and subsequently theshold scan for determining primarly the SPAD amplitude, and then DCR and CT probability.
 
-- **dcr.cpp** – C++ application that:
-  - Reads threshold scan files and a 0 V baseline,
-  - Subtracts baseline counts,
-  - Computes derivatives to identify peaks,
-  - Fits Gaussian curves to obtain single p.e. parameters,
-  - Calculates dark count rate (DCR) and cross-talk (CT) ratios,
-  - Writes results and graphs into `output.root`.
+## Directory Structure
 
-- **dcr_plot.cpp** – C++ application that:
-  - Opens `output.root`, reads the summary TTree,
-  - Normalizes DCR to acquisition window,
-  - Constructs TGraphErrors for p.e. mean, DCR, and CT,
-  - Performs a linear fit on p.e. mean vs. overvoltage,
-  - Draws plots with error bands and fit info,
-  - Saves updated canvases back to `output.root`.
-
-- **transition.py** – Python script for waveform handling:
-  - Loads `.npz` waveform datasets,
-  - Applies optional digital filters (lowpass, highpass, notch),
-  - Displays waveforms in mV or ADC units,
-  - Scans thresholds across a range or single value,
-  - Outputs hit-rate vs. threshold scans.
-
-
-## Usage Examples
-
-### 1. Run Dark Count Rate Analysis
 ```bash
-# Generate output.root with DCR & CT results
-./dcr
+analysis/
+├── dcr.sh                  # Main orchestrator script
+├── code/                   # Folder which contains codes
+│   ├── get_transitions.py  # Step 1: extract transition thresholds
+│   ├── dcr.cpp             # Step 2: ROOT macro to build TTree
+│   └── dcr_plot.cpp        # Step 3: ROOT macro to plot transitions
+├── Data/                   # Input data -> npz files
+└── Scan/                   # Temporary scan output directory
 ```
 
-Results saved in `output.root` (folder `Summary/` holds the TTree and graphs).
-
-### 2. Plot Results and Fit
-```bash
-# Add fit & produce canvases back into output.root
-./dcr_plot
-```
-
-It will print:
-```
-Grafici creati con successo!
-```
-
-### 3. Waveform Visualization & Filtering
-```bash
-# Display first 10 waveforms in mV, negative polarity, lowpass @200 MHz
-python3 transition.py \
-  --npz data/waveforms_5GS.npz \
-  --waveform mV --sign -1 --num_waveforms 10 --lowpass 2e8
-```
-
-### 4. Threshold Scanning Mode
-```bash
-# Scan thresholds from 0 mV to 15 mV and save hit-rate curve
-python3 transition.py \
-  --npz data/waveforms_5GS.npz \
-  --scanthr --range 0-15 --sign 1
-```
-
-Output: `[Number]OV.txt` (or similar).
+>  Folders `Data/` must exist before running `dcr.sh`. This folder should contains npz files from digitizer.
 
 ---
 
+## Usage
+
+```bash
+bash dcr.sh <scan?> <produce_root?> <plot?>
+```
+
+### Command-Line Arguments
+
+| Arg    | Values       | Description                                        |
+|--------|--------------|----------------------------------------------------|
+| `ans1` | `yes`/`no`   | Perform threshold scan (executes `get_transitions.py`) |
+| `ans2` | `yes`/`no`   | Produce ROOT file (runs `produce_tree.C`)          |
+| `ans3` | `yes`/`no`   | Generate plots (runs `plot.C`)                     |
+
+### Examples
+
+```bash
+# Run all steps
+bash dcr.sh yes yes yes
+
+# Only scan and build tree
+bash dcr.sh yes yes no
+
+# Skip scan, build tree & plot
+bash dcr.sh no yes yes
+```
+
+---
