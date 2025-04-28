@@ -42,11 +42,14 @@
  * ----------------------------------------------------------------------------
  * | findMaximum                   | Find index of maximum y above a threshold             |
  * ----------------------------------------------------------------------------
+ * | findLocalMaxima               | Find indices of local maxima in a vector              |
+ * ----------------------------------------------------------------------------
  * | computeDerivativeWithErrors   | Compute derivative and error from discrete data       |
  * ----------------------------------------------------------------------------
  * | writeGraphTTree               | Write a TGraphErrors into a ROOT TTree                |
  * ----------------------------------------------------------------------------
  ******************************************************************************/
+
 
 class Utils {
 public:
@@ -217,5 +220,22 @@ public:
     }
 // ------------------------------------------------------------------------------------ //
 };
+
+// ------------------------------------------------------------------------------------ //
+/// @brief  Find the indices of local maxima in a vector of data.
+/// @param  y  Vector of data points (e.g., derivative values).
+/// @return    Vector containing the indices of the local maxima.
+// ------------------------------------------------------------------------------------
+    static std::vector<int> findLocalMaxima(const std::vector<double> &y) {
+        std::vector<int> peakIndices;
+        for (size_t i = 1; i < y.size() - 1; ++i) {
+            if (y[i-1] < y[i] && y[i] > y[i+1]) {
+                peakIndices.push_back(i);
+            }
+        }
+        return peakIndices;
+    }
+// ------------------------------------------------------------------------------------ //
+
 
 #endif // UTILS_H
