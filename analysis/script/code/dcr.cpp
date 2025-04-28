@@ -155,24 +155,51 @@ void dcr() {
     // Derivative and derivative graph
     auto [sMedie, derivate, derivateErr] = Utils::computeDerivativeWithErrors(thresholds, counts, yErrors, false);
     TGraphErrors *gDerivOrig = Utils::createGraph(sMedie, derivate, std::vector<double>(sMedie.size(), 0.0), derivateErr);
+      
+      // --- Find all local maximums ---
+      std::vector<int> peakIndices = Utils::findLocalMaxima(derivate);
 
-    // Find peak
-    int peakIndex = Utils::findMaximum(sMedie, derivate, 6.0);
 
-    if (peakIndex != -1) {
-      // Fit Gaussian
-      std::tie(pe, std, peErr, stdErr, reducedChi2) = Analysis::fitGaussian(
-          gDerivOrig, sMedie[peakIndex] - 0.5, sMedie[peakIndex] + 1.5,
-          derivate[peakIndex], sMedie[peakIndex], 1.0);
+      // Checking that there are maximum
+      if (!peakIndices.empty()) {
+          // Find the maximum with the smallest X value => first spad
+          int firstPeakIndex = peakIndices[0];
+          for (int idx : peakIndices) {
+              if (sMedie[idx] < sMedie[firstPeakIndex]) {
+                  firstPeakIndex = idx;
+              }
+          }
 
-      // Calculate DCR and CT
-      std::tie(DCR, DCR_Error) = Analysis::calculateCounts(thresholds, counts, 0.5 * pe);
-      auto [CT_value, CT_error] = Analysis::calculateCounts(thresholds, counts, 1.5 * pe);
-      std::tie(CT, CT_Error) = Analysis::calculateCTDCRRatio(DCR, DCR_Error, CT_value, CT_error);
+          // --- Fit on ALL peaks ---
+          for (int idx : peakIndices) {
+              auto [peTemp, stdTemp, peErrTemp, stdErrTemp, reducedChi2Temp] = Analysis::fitGaussian(
+                  gDerivOrig,
+                  sMedie[idx] - 0.5, sMedie[idx] + 0.5,
+                  derivate[idx],
+                  sMedie[idx],
+                  1.0
+              );
 
-      ov = overvoltage;
-      infoTree->Fill();
-    }
+              // Save results only of first spad
+              if (idx == firstPeakIndex) {
+                  pe = peTemp;
+                  std = stdTemp;
+                  peErr = peErrTemp;
+                  stdErr = stdErrTemp;
+                  reducedChi2 = reducedChi2Temp;
+
+                  // --- DCR and CT calculation ONLY for the first spad ---
+                  std::tie(DCR, DCR_Error) = Analysis::calculateCounts(thresholds, counts, 0.5 * pe);
+                  auto [CT_value, CT_error] = Analysis::calculateCounts(thresholds, counts, 1.5 * pe);
+                  std::tie(CT, CT_Error) = Analysis::calculateCTDCRRatio(DCR, DCR_Error, CT_value, CT_error);
+
+                  ov = overvoltage;
+                  infoTree->Fill();
+              }
+          }
+      }
+
+
 
     // Set graph styles
     Int_t dynamicColor = ColorPaletteManager::getColorFromOvervoltage(overvoltage);
