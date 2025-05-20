@@ -25,7 +25,7 @@ from scipy.signal import butter, filtfilt, iirnotch
 # 1D numpy arrays representing waveform data.
 ########################################################################################
 
-class Filter:
+class Filters:
     def __init__(self, sampling_rate: float):
         """
         :param sampling_rate: Sampling rate of the waveform in Hz (e.g., 5e9 for 5 GS/s).
@@ -33,16 +33,35 @@ class Filter:
         self.sampling_rate = sampling_rate
         self.nyquist = 0.5 * self.sampling_rate
 
-    def lowpass(self, waveform: np.ndarray, cutoff_freq: float, order: int = 4) -> np.ndarray:
+    # def lowpass(self, waveform: np.ndarray, cutoff_freq: float, order: int = 4) -> np.ndarray:
+    #     """
+    #     :param waveform: The waveform data to filter.
+    #     :param cutoff_freq: The cutoff frequency (in Hz) for the lowpass filter.
+    #     :param order: The order of the filter. Higher orders result in a steeper roll-off.
+    #     :return: The filtered waveform.
+    #     """
+    #     normal_cutoff = cutoff_freq / self.nyquist
+    #     b, a = butter(order, normal_cutoff, btype="low")
+    #     return filtfilt(b, a, waveform)
+    
+    @staticmethod
+    def lowpass_filter(wf, fs, cutoff_hz=200e6, order=4): # to be merged with the other lowpass function
         """
-        :param waveform: The waveform data to filter.
-        :param cutoff_freq: The cutoff frequency (in Hz) for the lowpass filter.
-        :param order: The order of the filter. Higher orders result in a steeper roll-off.
-        :return: The filtered waveform.
+        Apply a low-pass Butterworth filter to reduce high-frequency noise.
+        
+        Parameters:
+        - wf: waveform array
+        - fs: sampling frequency in Hz
+        - cutoff_hz: cutoff frequency (default: 200 MHz)
+        - order: filter order (default: 4)
+        
+        Returns:
+        - filtered waveform array
         """
-        normal_cutoff = cutoff_freq / self.nyquist
-        b, a = butter(order, normal_cutoff, btype="low")
-        return filtfilt(b, a, waveform)
+        nyq = fs / 2.0
+        normal_cutoff = cutoff_hz / nyq
+        b, a = butter(order, normal_cutoff, btype='low', analog=False)
+        return filtfilt(b, a, wf)
 
     def highpass(self, waveform: np.ndarray, cutoff_freq: float, order: int = 4) -> np.ndarray:
         """
