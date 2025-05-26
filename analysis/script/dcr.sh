@@ -68,7 +68,7 @@ if [[ "$ans1" == "yes" ]]; then
     mkdir -p "$SCAN_DIR"
     for file in "$DATA_DIR"/*.npz; do
         echo -e "\033[1;36mAnalyze: $file\033[0m"
-        python3 "$SCRIPT_PATH" --npz "$file" --scanthr --range 0-1 --sign 1 --x_start 100 --x_end 987
+        python3 "$SCRIPT_PATH" --npz "$file" --scanthr --range 0-20 --sign 1 --x_start 100 --x_end 987 --num_waveforms 10000
     done
     mv -- *.txt "$SCAN_DIR"/
 fi
