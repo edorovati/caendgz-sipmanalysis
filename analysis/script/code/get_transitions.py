@@ -295,7 +295,7 @@ if args.scanthr and args.range:
     if "singlethr" in args.range:
         threshold_value = float(args.range.split()[-1])
         #output_file = Utils.generate_output_filename(args.npz)
-        output_file = args.npz
+        output_file = os.path.splitext(args.npz)[0] + ".txt"
         scan_obj.scan_thresholds(
             preprocessed_waveforms,
             args.sign,
@@ -307,9 +307,9 @@ if args.scanthr and args.range:
         print(Fore.YELLOW + f"\nResults saved in: {output_file}" + Style.RESET_ALL)
 
     elif '-' in args.range:
-        #range_min, range_max = map(float, args.range.split('-'))
+        range_min, range_max = map(float, args.range.split('-'))
         #output_file = Utils.generate_output_filename(args.npz)
-        output_file = args.npz
+        output_file = os.path.splitext(args.npz)[0] + ".txt"
         scan_obj.scan_thresholds(
             preprocessed_waveforms,
             args.sign,
