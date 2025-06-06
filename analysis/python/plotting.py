@@ -62,7 +62,6 @@ class Plotting:
 
             
         
-        
     
     @staticmethod
     def add_inset_zoom(ax, waveforms, alpha_decay, base_color=(1.0, 1.0, 0.0), default_target_idx=150):
