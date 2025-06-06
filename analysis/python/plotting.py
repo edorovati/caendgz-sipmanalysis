@@ -6,9 +6,9 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 class Plotting:
 
     @staticmethod
-    def scope_plot(ax, waveforms, unit, npz_path, color=(1.0, 1.0, 0.0), align='auto'):
+    def scope_plot(ax, waveforms, unit, npz_path, color=(1.0, 1.0, 0.0), align='auto', sampling=None, plot_avg=False):
         """
-        Plot waveforms in oscilloscope-style overlay with time axis.
+        Plot waveforms in oscilloscope-style overlay with time axis centered on the signal peak.
 
         Parameters:
         - ax: matplotlib axis object
@@ -17,21 +17,51 @@ class Plotting:
         - npz_path: path to .npz file (used to extract sampling rate)
         - color: base color for waveform lines
         - align: alignment mode for title
+        - sampling: sampling rate in MHz (required)
+        - plot_avg: if True, also plot the average waveform
         """
         if not waveforms:
             print("⚠️ No waveforms to plot in scope_plot.")
             return
 
-        alpha_decay = np.linspace(0.05, 0.8, len(waveforms))
-        x_time = Utils.cell_to_seconds(np.arange(len(waveforms[0])), npz_path) * 1e9
+        if sampling is None:
+            raise ValueError("⚠️ 'sampling' must be provided to scope_plot.")
+
+        nsamples = 1024
+        margin = 10  # Number of samples before the peak
+
+        # Calcola asse temporale centrato sul picco della prima waveform
+        first_wf = waveforms[0][:nsamples]
+        peak_index = np.argmax(first_wf)
+        time_shift = peak_index - margin
+        x_time = (np.arange(nsamples) - time_shift) / sampling * 1e3  # ns
+
+        # Plot delle waveform
+        n = len(waveforms)
+        if n < 10:
+            alpha_decay = np.linspace(0.6, 0.9, n)
+        else:
+            alpha_decay = np.linspace(0.1, 0.8, n)
 
         for wf, alpha in zip(waveforms, alpha_decay):
             ax.plot(x_time, wf, color=color, alpha=alpha, linewidth=1)
+
+        # Plot della mediana
+        if plot_avg:
+            avg_wf = np.median(waveforms, axis=0)
+            ax.plot(x_time, avg_wf, color='red', alpha=1.0, linewidth=2, label='Average waveform')
 
         ax.set_xlabel("Time [ns]")
         ax.set_ylabel(f"Amplitude [{unit}]")
         ax.set_title(f'Oscilloscope-style Overlay of {len(waveforms)} {"Aligned" if align else "Raw"} Waveforms ({unit})')
         ax.grid(color='white', alpha=0.2)
+
+        if plot_avg:
+            ax.legend()
+
+
+            
+        
         
     
     @staticmethod

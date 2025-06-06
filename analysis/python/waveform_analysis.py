@@ -19,16 +19,11 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 
 class waveform_analysis:
-    # def __init__(self, data_dir=None):
-        # """
-        # Initialize the waveform analyzer with a default data directory.
-        # """
-        # if data_dir is None:
-        #     self.data_dir = Utils.find_data_directory()
-        # else:
-        #     self.data_dir = os.path.abspath(data_dir)
 
-        # print("Using data directory:", self.data_dir)
+    
+    ###########################
+    # BASIC FUNCTIONS
+    ###########################
 
     @staticmethod
     def calculate_baseline_with_mask(
@@ -103,60 +98,45 @@ class waveform_analysis:
                 start = indices[i]
         groups.append((start, indices[-1]))
         return groups
-
-    @staticmethod
-    def plot_first_waveform(npz_path, data, unit='ADC'):
-        wf_data = Utils.load_waveforms(npz_path) #called for nothing
-        info = Utils.get_info(npz_path)
-        for key in data.files:
-            wf_array = data[key]
-            if wf_array.ndim == 2 and wf_array.shape[0] >= 10:
-                for i in range(10):
-                    wf = wf_array[i+10]
-                    if unit == 'mV':
-                        wf = Utils.adc_to_mv(wf)
-                        baseline, _ = waveform_analysis.calculate_baseline_with_mask(wf, 49, 973)
-                        wf -= baseline
-                        fs = info["sampling_rate_ghz"]*1e9
-                        # wf = Filters.lowpass_filter(wf, fs, cutoff_hz=200e6, order=4)
-                    plt.plot(wf, alpha=0.4, label=f"{key} #{i}" if i == 0 else "")
-            else:
-                print(f"⚠️ Skipping {key}: not enough waveforms or not a 2D array.")
-
-        plt.title(f"First 100 waveforms per channel ({unit})")
-        plt.xlabel("Sample index")
-        plt.ylabel(f"Amplitude [{unit}]")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-        
     
+    # should this be changed in favor of find_peaks?
+    # SASSANDUM EST?
     @staticmethod
     def find_rising_edge(wf, threshold_factor=0.63):
         peak = np.max(wf)
         threshold = peak * threshold_factor
-        for i in range(128, 768):
+        for i in range(128, 768): #  should be changed dinamically 
             if wf[i] > threshold and wf[i - 1] <= threshold:
                 return i
         return 0
 
-    @staticmethod
-    def find_polarity(waveform):
-        """
-        Determines the dominant signal polarity of a baseline-subtracted waveform.
-        Returns 'positive' or 'negative'.
-        """
-        max_val = np.max(waveform)
-        min_val = np.min(waveform)
 
-        if abs(min_val) > abs(max_val):
-            return 'negative'
-        else:
-            return 'positive'
+    # SASSANDUM EST! NOT USED ANYMORE!
+    # @staticmethod
+    # def find_polarity(waveform):
+    #     """
+    #     Determines the dominant signal polarity of a baseline-subtracted waveform.
+    #     Returns 'positive' or 'negative'.
+    #     """
+    #     max_val = np.max(waveform)
+    #     min_val = np.min(waveform)
+
+    #     if abs(min_val) > abs(max_val):
+    #         return 'negative'
+    #     else:
+    #         return 'positive'
        
+    
+    
+    ###########################
+    # WAVEFORM PROCESSING POST-BASELINE SUBTRACTION
+    ###########################
+    
     @staticmethod 
-    def align_waveforms(waveforms, rising_edges, mode="auto"):
+    def align_waveforms(waveforms, rising_edges, mode="True"):
+        # consider removing the "auto" mode, not perfectly controllable
+        # IMPORTANT: ADD the option to set the offset to 0 and shift the waveforms accordingly?   
+           # maybe can be handled in the plotting function 
         """
         Aligns waveforms to their rising edge positions.
         
@@ -206,6 +186,8 @@ class waveform_analysis:
         return aligned
 
 
+
+    # iper genera-purpose analyzer, included: baseline subtraction, peak detection, alignment, etc.
     @staticmethod
     def analyze_waveforms(wf_data, fs, baseline_range, amplitude_threshold=5.5,
                         max_waveforms=None, unit='mV', get_edges=False,
@@ -290,151 +272,10 @@ class waveform_analysis:
             return final_waveforms
 
 
+###########################
+# DECAY TIME WITH FIT
+###########################
 
-
-    
-
-    
-
-        # # Plot delle waveform con tau ≈ 5 ns
- 
-
-
-
-
-
-
-
-
-
-    #     # THIS HAS TO BE COMPLETELY REWRITTEN IN VIEW OF THE NEW CHANGES --> SEE PERSISTENCE
-    #     #waveform_analysis
-    #     def recdec_time(self, npz_path, unit='mV', p2p_threshold=4.0, num_waveforms=100, align="auto", custom_filename=None):
-    #         info = waveform_analysis.get_info(npz_path)
-    #         wf_data = waveform_analysis.load_waveforms(npz_path)
-    #         info = Utils.get_info(npz_path)
-    #         fs = info["sampling_rate_ghz"]*1e9
-
-    #         baseline_start, baseline_end = 49, 973
-    #         selected_waveforms = []
-    #         rising_edges = []
-    #         peak_heights = []
-    #         valid_waveforms_count = 0
-
-    #         for key in wf_data.files:
-    #             wf_array = wf_data[key]
-    #             if wf_array.ndim == 2 and wf_array.shape[0] > 0:
-    #                 for i in range(wf_array.shape[0]):
-    #                     wf_adc = wf_array[i]
-    #                     wf = wf_adc if unit != 'mV' else wf_adc
-
-    #                     wf = Utils.adc_to_mv(wf_adc) if unit == 'mV' else wf_adc  # conversion enabled
-    #                     baseline, _ = waveform_analysis.calculate_baseline_with_mask(wf, baseline_start, baseline_end)
-    #                     wf -= baseline
-    #                     fs = info["sampling_rate_ghz"]*1e9
-    #                     wf = Filters.lowpass_filter(wf, fs, cutoff_hz=200e6, order=4)
-
-
-    #                     p2p = np.ptp(wf[baseline_start:baseline_end])
-    #                     if p2p >= p2p_threshold:
-    #                         selected_waveforms.append(wf)
-    #                         rising_edges.append(waveform_analysis.find_rising_edge(wf))
-    #                         peak_heights.append(np.max(wf))
-    #                         valid_waveforms_count += 1
-
-    #                     if valid_waveforms_count >= num_waveforms:
-    #                         break
-    #                 if valid_waveforms_count >= num_waveforms:
-    #                     break
-
-    #         if valid_waveforms_count == 0:
-    #             print("⚠️  No waveforms passed the P2P threshold!")
-    #             return
-
-    #         if align:
-    #             selected_waveforms = waveform_analysis.align_waveforms(selected_waveforms, rising_edges, mode=align)
-
-    #         if not selected_waveforms:
-    #             print("⚠️ No valid waveforms to plot.")
-    #             return
-
-    #         peak_heights = np.array(peak_heights)
-    #         span = 3.0  # mV
-    #         n_sigma = 3 # let's say like this but it may change in the future
-
-    #         # Calcola il rumore medio (RMS) nella baseline delle waveform valide
-    #         baseline_rms_values = [np.std(wf[baseline_start:baseline_end]) for wf in selected_waveforms]
-    #         avg_rms = np.mean(baseline_rms_values)
-    #         min_peak_threshold = avg_rms * n_sigma
-
-    #         # Trova il gruppo di waveform con il picco minimo sopra soglia rumore
-    #         valid_peak_indices = [i for i, pk in enumerate(peak_heights) if pk > min_peak_threshold]
-    #         if not valid_peak_indices:
-    #             print("⚠️ I picco sopra la soglia rumore. Riduci n_sigma o controlla i dati.")
-    #             return
-
-    #         valid_peaks = np.array([peak_heights[i] for i in valid_peak_indices])
-    #         min_peak = np.min(valid_peaks)
-
-    #         # Seleziona waveform attorno al picco più basso valido
-    #         close_indices = [i for i in valid_peak_indices if abs(peak_heights[i] - min_peak) < span]
-
-    #         used_waveforms = [selected_waveforms[i] for i in close_indices]
-    #         other_waveforms = [selected_waveforms[i] for i in range(len(selected_waveforms)) if i not in close_indices]
-
-    #         avg_waveform = np.mean(used_waveforms, axis=0)
-
-    #         # Plotting
-    #         plt.style.use('dark_background')
-    #         fig, ax = plt.subplots(figsize=(10, 6))
-    #         fig.patch.set_facecolor('black')
-    #         ax.set_facecolor('#000c1f')
-    #         ax.grid(color='white', alpha=0.2)
-
-    #         alpha_decay = np.linspace(0.05, 0.8, len(selected_waveforms))
-    #         x_time = Utils.cell_to_seconds(np.arange(len(wf)), npz_path) * 1e9
-    #         for idx, wf in enumerate(other_waveforms):
-    #             ax.plot(x_time, wf, color='yellow', alpha=0.3, linewidth=1)
-    #         for idx, wf in enumerate(used_waveforms):
-    #             ax.plot(x_time, wf, color='red', alpha=0.5, linewidth=1)
-    #         ax.set_xlabel("Time [ns]")
-
-    #         ax.plot(x_time, avg_waveform, color='white', linewidth=2.0, label='Average SPE')
-
-    #         ax.set_title(f'SPE Overlay: {len(used_waveforms)} Selected (Red) for Avg + Mean (White) [{unit}]')
-    #         ax.set_ylabel(f"Amplitude [{unit}]")
-    #         plt.tight_layout()
-
-    #         target_idx = 150 if align else None
-    #         # to be fixed with the right time conversion
-    #         Plotting.add_inset_zoom(ax, used_waveforms, np.linspace(0.3, 0.8, len(used_waveforms)), default_target_idx=target_idx)
-    #         base_filename = custom_filename if custom_filename else os.path.basename(npz_path).replace(".npz", "")
-    #         bias_match = re.search(r'bias([\d\.]+)', npz_path)
-    #         bias_value = bias_match.group(1) if bias_match else 'N/A'   
-    #         # Prepare the legend text
-    #         # filename_info = f"File: {os.path.basename(npz_path)}\n"
-    #         # filename_info += f"Waveforms: {valid_waveforms_count}\n"
-    #         # filename_info += f"Unit: {unit}\n"
-    #         # filename_info += f"P2P Threshold: {p2p_threshold} {unit}\n"
-    #         filename_info = f'Bias voltage: {bias_value} V\n' 
-    #         filename_info += f"CAEN DGZ DT5742B\n"
-    #         filename_info += f"Sampling rate: {info["rel_path"] / 1e9} GS\n"
-    #         filename_info += f"Persistence: {"Auto" if align == "auto" else align}\n"
-
-    #         os.makedirs("./analysis", exist_ok=True)
-            
-    #         output_path = os.path.join("./analysis", base_filename + "_SPE_overlay.png")
-    #         plt.savefig(output_path, dpi=1200)
-    #         print(f"✅ Plot with average waveform saved to: {output_path}")
-
-    # #######################
-    @staticmethod
-    def exp_decay(t, A, tau, C):
-        return A * np.exp(-t / tau) + C
-
-
-
-   
     @staticmethod
     def fit_decay_and_plot_tau_distribution(
         waveforms,
@@ -528,6 +369,8 @@ class waveform_analysis:
 
         return taus, tau_errors, amps, amp_errors, offsets, offset_errors, fitted_waveforms
 
+
+
    
     @staticmethod
     def decay_time(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100,
@@ -574,83 +417,12 @@ class waveform_analysis:
             )
 
         return taus, tau_errors, amps, amp_errors, offsets, offset_errors
+    
 
 
-    @staticmethod
-    def compare_waveforms(npz_paths, unit='mV', amplitude_threshold=4.0, num_waveforms=100, sampling=None):
-        """
-        Confronta le waveform da più file .npz: selezione sopra soglia, allineamento e normalizzazione.
-        Nessun effetto persistenza: solo overlay comparativo.
-
-        Parameters:
-        - npz_paths: lista di percorsi ai file .npz
-        - unit: 'mV' o 'ADC'
-        - amplitude_threshold: soglia P2P minima
-        - num_waveforms: numero di waveform da selezionare per file
-        - sampling: frequenza di campionamento in GHz
-        """
-        try:
-            plt.style.use('seaborn-darkgrid')
-        except OSError:
-            print("⚠️  Style 'seaborn-darkgrid' not found, falling back to 'default'")
-            plt.style.use('default')
-
-        all_waveforms = []
-        labels = []
-
-        for npz_path in npz_paths:
-            wf_data = Utils.load_waveforms(npz_path)
-            info = Utils.get_info(npz_path)
-
-            selected_waveforms, rising_edges = waveform_analysis.analyze_waveforms(
-                wf_data=wf_data,
-                fs=sampling,
-                baseline_range=(49, 973),
-                amplitude_threshold=amplitude_threshold,
-                max_waveforms=num_waveforms,
-                unit=unit,
-                get_edges=True
-            )
-
-            if not selected_waveforms:
-                print(f"⚠️ No waveforms selected from: {npz_path}")
-                continue
-
-            aligned = waveform_analysis.align_waveforms(selected_waveforms, rising_edges, mode="auto")
-            waveforms = [wf / np.max(wf) for wf in aligned]
-
-
-            all_waveforms.append(waveforms)
-            label = os.path.basename(npz_path).replace('.npz', '')
-            labels.append(label)
-
-        if not all_waveforms:
-            print("❌ No valid waveform sets found.")
-            return
-
-        # Plot
-        plt.figure(figsize=(10, 6))
-        for i, wf_set in enumerate(all_waveforms):
-            for wf in wf_set:
-                plt.plot(wf, alpha=0.5, label=labels[i] if wf is wf_set[0] else None)
-
-        plt.xlabel("Samples")
-        plt.ylabel(f"Amplitude (normalized)")
-        plt.title("Overlay of Aligned & Normalized Waveforms")
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-
-        outname = "_vs_".join(labels) + "_comparison.png"
-        output_dir = os.path.join(Utils.find_data_directory(), "plots")
-        os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(output_dir, outname)
-        plt.savefig(output_path, dpi=1200)
-        print(f"✅ Comparison plot saved to: {output_path}")
-
-
-
-
+###########################
+# Direct tau estimation
+###########################
 
     
     @staticmethod
@@ -721,7 +493,9 @@ class waveform_analysis:
         return taus
     
     
-
+###########################
+# Direct tau estimation
+###########################
 
 
     @staticmethod
@@ -819,6 +593,9 @@ class waveform_analysis:
 
         return taus, [peak_val]
     
+###########################
+# Direct tau estimation - mean waveform
+###########################
     
     def tau_direct_mean(self, npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100,
                         color='green', align="False", sampling=None, output_filename=None):
@@ -909,9 +686,12 @@ class waveform_analysis:
         return taus, [peak_val]
     
     
+###########################
+# Persistence plot with waveform analysis
+###########################
     
     
-    def persistence(self, npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100,
+    def persistence(self, npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100, #maybe none?
                 color='green', align="False", sampling=None, output_filename=None):
         wf_data = Utils.load_waveforms(npz_path)
         info = Utils.get_info(npz_path)
@@ -935,22 +715,17 @@ class waveform_analysis:
             return
         # Initialize waveforms as the selected waveforms
         waveforms = selected_waveforms
-        # waveforms = Filters.lowpass_filter(
-        #     waveforms, sampling*1e6, cutoff_hz=200e6, order=4
-        # )
-
-        # TO DO! fix alignment 
-        # Align waveforms if required --> to be fixed and tested in few cases
+        
+        # === ALIGNMENT ===
         if align:
             waveforms = waveform_analysis.align_waveforms(waveforms, rising_edges, mode=align)
-        #SINGLE PE FILTER??
         
         # === Check if waveforms are available before plotting ===
         if not waveforms:
             print("⚠️ No valid waveforms to plot.")
             return
 
-        # Plot
+        # === PLOT ===
         plt.style.use('dark_background')
         fig, ax = plt.subplots(figsize=(10, 6))
         fig.patch.set_facecolor('black')
@@ -965,7 +740,6 @@ class waveform_analysis:
         target_idx = 150 if align else None
         Plotting.add_inset_zoom(ax, waveforms, alpha_decay, default_target_idx=target_idx)
 
-
         # Add margin to the right for the legend
         fig.subplots_adjust(right=0.81)  # Adjust right margin to leave space for the legend
 
@@ -979,165 +753,156 @@ class waveform_analysis:
         # Add legend outside the plot
         fig.text(0.82, 0.5, filename_info, ha='left', va='center', fontsize=8, color='white', fontfamily='monospace')
 
-        # Save
-        # Remove file extension and get relative path from 'data'
-        output_path = output_filename if output_filename else info["output_path"]
+        # === SAVE ===
+        # Remove file extension and get relative path from 'data' --> BE CAREFUL to this!
+        output_path = output_filename if output_filename else print(f"⚠️ No output filename provided, skipping save.")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         plt.savefig(output_path, dpi=1200)
         print(f"✅ Plot saved to: {output_path}")
+        
+        # return waveforms # should i adapt the main function to return the waveforms?
 
 
 
 
 
-
+###########################
+# Store median waveform 
+###########################
     @staticmethod
-    def persistence2(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100,
-                color='green', align="False", sampling=None, output_filename=None):
+    def store_avg(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100, align=False, sampling=None):
         wf_data = Utils.load_waveforms(npz_path)
-        info = Utils.get_info(npz_path)
-
-        selected_waveforms = []
-        rising_edges = []
-        fs = sampling
         baseline_range = (49, 973)
+
         selected_waveforms, rising_edges = waveform_analysis.analyze_waveforms(
             wf_data=wf_data,
-            fs=fs,
+            fs=sampling,
             baseline_range=baseline_range,
             amplitude_threshold=amplitude_threshold,
             max_waveforms=num_waveforms,
             unit=unit,
             get_edges=True
         )
-        
+
         peak_values = []
         peak_indices = []
 
-        for idx, wf in enumerate(selected_waveforms):
-            search_start, search_end = 128, 768
-            sub_wave = wf[search_start:search_end]
-            peak_local_idx = np.argmax(sub_wave)
-            peak_idx = search_start + peak_local_idx
+        for wf in selected_waveforms:
+            sub_wave = wf[128:768]
+            peak_idx = np.argmax(sub_wave) + 128
             peak_val = wf[peak_idx]
             peak_values.append(peak_val)
             peak_indices.append(peak_idx)
 
         peak_values = np.array(peak_values).reshape(-1, 1)
-
         kmeans = KMeans(n_clusters=2, random_state=0)
         kmeans.fit(peak_values)
         labels = kmeans.labels_
         cluster_centers = kmeans.cluster_centers_.flatten()
-
         lowest_cluster = np.argmin(cluster_centers)
-        print(f"Cluster center amplitudes: {cluster_centers}")
-        print(f"Selected single PE cluster (lowest): {cluster_centers[lowest_cluster]:.3f} mV")
 
-        # Usa una lista nuova invece di modificare selected_waveforms
-        filtered_waveforms = []
-        for wf, peak_idx, peak_val, cluster_label in zip(selected_waveforms, peak_indices, peak_values.flatten(), labels):
-            if cluster_label == lowest_cluster:
-                filtered_waveforms.append(wf)
+        filtered_waveforms = [
+            wf for wf, peak_val, label in zip(selected_waveforms, peak_values.flatten(), labels)
+            if label == lowest_cluster
+        ]
 
         if not filtered_waveforms:
-            print("⚠️ Nessun waveform selezionato!")
+            print("⚠️ Nessun waveform selezionato dopo clustering!")
             return [], []
 
-        # Inizializza waveforms come quelli filtrati
-        waveforms = filtered_waveforms
-
-        # waveforms = Filters.lowpass_filter(
-        #     waveforms, sampling*1e6, cutoff_hz=200e6, order=4
-        # )
-
-        # TO DO! fix alignment 
-        # Align waveforms if required --> to be fixed and tested in few cases
         if align:
-            waveforms = waveform_analysis.align_waveforms(waveforms, rising_edges, mode=align)
+            filtered_waveforms = waveform_analysis.align_waveforms(filtered_waveforms, rising_edges, mode=align)
 
-        # Filtro: tieni solo le waveform con picco attorno all’indice 150
-        peak_aligned_waveforms = []
-        for wf in waveforms:
-            peak_idx = np.argmax(wf)
-            if 145 <= peak_idx <= 155:
-                peak_aligned_waveforms.append(wf)
-
-        print(f"✅ Waveforms with peak ~150: {len(waveforms)}")
-        
-        # === Check if waveforms are available before plotting ===
-        if not peak_aligned_waveforms:
-            print("⚠️ No valid waveforms to plot.")
-            return
-        #discard all the waveforms that mis-aligned peaks
-
-
+        peak_aligned_waveforms = [
+            wf for wf in filtered_waveforms if 145 <= np.argmax(wf) <= 155
+        ]
 
         single_peak_waveforms = []
-
         for wf in peak_aligned_waveforms:
             peaks, _ = find_peaks(wf, height=amplitude_threshold)
-
-            # Trova picchi principali nella finestra 145–155
             main_peaks = peaks[(145 <= peaks) & (peaks <= 155)]
-            
-            # Verifica che ci sia esattamente UN picco principale
-            if len(main_peaks) != 1:
-                continue
-
-        #     main_peak = main_peaks[0]
-
-        #     # Controlla che eventuali altri picchi siano almeno 500 frame più a destra
-        #     other_peaks = peaks[(peaks > 155)]
-        #     if np.any(other_peaks < main_peak + 25):
-        #         continue
-
-        #     # Se supera i controlli, la waveform è buona
-            single_peak_waveforms.append(wf)
+            if len(main_peaks) == 1:
+                single_peak_waveforms.append(wf)
 
         if not single_peak_waveforms:
-            print("⚠️ Nessuna waveform con un solo picco principale e altri picchi lontani!")
-            return
+            print("⚠️ Nessuna waveform valida!")
+            return [], []
 
         avg_wf = np.median(single_peak_waveforms, axis=0)
+        return single_peak_waveforms, avg_wf
+
+    
+    
 
 
-        
-        ################### TAU
-        # Calcola dt
+
+
+    ###########################
+    # LATEST + DEBUG...
+    ###########################
+    
+    def compute_tau(waveforms, avg_wf, sampling, output_filename=None):
         dt = 1e3 / sampling  # ns per sample
         print(f"Sampling rate: {sampling} MHz")
         print(f"dt (ns per sample): {dt:.3f}")
 
-        
         peak_idx = np.argmax(avg_wf)
         peak_val = avg_wf[peak_idx]
-
         target_val = peak_val / np.e
         tau_ns = None
+        tau_err_ns = None
+
+        waveforms_array = np.array(waveforms)
+        point_std = np.std(waveforms_array, axis=0, ddof=1)
+        err_mean = point_std / np.sqrt(len(avg_wf))
+
         for i in range(peak_idx + 1, len(avg_wf)):
             if avg_wf[i] <= target_val:
                 tau_ns = (i - peak_idx) * dt
+                slope = abs(avg_wf[i] - avg_wf[i - 1])
+                if slope < 1e-12:
+                    slope = 1e-12
+                tau_err_ns = dt * (err_mean[i] / slope)
                 break
 
-        taus = []
         if tau_ns is not None:
-            taus.append(tau_ns)
-            print(f"Tau stimato: {tau_ns:.3f} ns")
-        else:
-            print("⚠️ Nessun crossing trovato per 1/e decay!")
-
-        if taus:
+            print(f"Tau stimato: {tau_ns:.3f} ± {tau_err_ns:.3f} ns")
             if output_filename is None:
                 output_filename = "./RICCARDO.txt"
 
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
             with open(output_filename, "w") as f:
-                for tau in taus:
-                    f.write(f"{tau:.6f}\t{peak_val:.6f}\n")
-            print(f"✅ Risultati (tau + peak) salvati in {output_filename}")
-            
-            
+                f.write("Tau(ns)\tTau_error(ns)\tPeak_val\n")
+                f.write(f"{tau_ns:.6f}\t{tau_err_ns:.6f}\t{peak_val:.6f}\n")
+            print(f"✅ Risultati (tau + errore + peak) salvati in {output_filename}")
+        else:
+            print("⚠️ Nessun crossing trovato per 1/e decay!")
+
+        return tau_ns, tau_err_ns
+
+    
+    
+    @staticmethod
+    def persistence2(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100,
+                color='green', align="False", sampling=None, output_filename=None):
+        wf_data = Utils.load_waveforms(npz_path)
+        info = Utils.get_info(npz_path)
+
+        single_peak_waveforms, avg_wf = waveform_analysis.store_avg(
+            npz_path=npz_path,
+            unit=unit,
+            amplitude_threshold=amplitude_threshold,
+            num_waveforms=num_waveforms,
+            align=align,
+            sampling=sampling
+        )
+
+        if not single_peak_waveforms:
+            print("⚠️ No valid waveforms to plot.")
+            return
+
+        waveform_analysis.compute_tau(single_peak_waveforms, avg_wf, sampling, output_filename)
+
         # Plot
         plt.style.use('dark_background')
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -1145,32 +910,103 @@ class waveform_analysis:
         ax.set_facecolor('#000c1f')
 
         alpha_decay = np.linspace(0.05, 0.8, len(single_peak_waveforms))
-        Plotting.scope_plot(ax, single_peak_waveforms, unit=unit, npz_path=npz_path, color=(1.0, 1.0, 0.0), align=align,sampling=sampling, plot_avg=True)
+        Plotting.scope_plot(ax, single_peak_waveforms, unit=unit, npz_path=npz_path,
+                            color=(1.0, 1.0, 0.0), align=align, sampling=sampling, plot_avg=True)
 
         plt.tight_layout()
-
-
-        target_idx = 150 if align else None
-        Plotting.add_inset_zoom(ax, single_peak_waveforms, alpha_decay, default_target_idx=target_idx)
-
-
         # Add margin to the right for the legend
-        fig.subplots_adjust(right=0.81)  # Adjust right margin to leave space for the legend
+        fig.subplots_adjust(right=0.81)
 
-        # Estrai il valore del bias dal nome del file
         bias_value = info["bias"]
-        # Legend text
         filename_info = f'Bias voltage: {bias_value} V\n' 
         filename_info += f"CAEN DGZ DT5742B\n"
         filename_info += f"Sampling rate: {sampling} GS\n"
         filename_info += f"Persistence: {"Auto" if align == "auto" else align}\n"
-        # Add legend outside the plot
         fig.text(0.82, 0.5, filename_info, ha='left', va='center', fontsize=8, color='white', fontfamily='monospace')
 
-        # Save
-        # Remove file extension and get relative path from 'data'
         output_path = output_filename + ".png" if output_filename else info["output_path"]
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         plt.savefig(output_path, dpi=1200)
         print(f"✅ Plot saved to: {output_path}")
+
+        return avg_wf
+
+
+###########################
+# COMPARE PLOTS - MAYBE SOMEWHERE ELSE?
+###########################
+
+
+    @staticmethod
+    def compare_waveforms(npz_paths, unit='mV', amplitude_threshold=4.0, num_waveforms=100, sampling=None):
+        """
+        Confronta le waveform da più file .npz: selezione sopra soglia, allineamento e normalizzazione.
+        Nessun effetto persistenza: solo overlay comparativo.
+
+        Parameters:
+        - npz_paths: lista di percorsi ai file .npz
+        - unit: 'mV' o 'ADC'
+        - amplitude_threshold: soglia P2P minima
+        - num_waveforms: numero di waveform da selezionare per file
+        - sampling: frequenza di campionamento in GHz
+        """
+        try:
+            plt.style.use('seaborn-darkgrid')
+        except OSError:
+            print("⚠️  Style 'seaborn-darkgrid' not found, falling back to 'default'")
+            plt.style.use('default')
+
+        all_waveforms = []
+        labels = []
+
+        for npz_path in npz_paths:
+            wf_data = Utils.load_waveforms(npz_path)
+            info = Utils.get_info(npz_path)
+
+            selected_waveforms, rising_edges = waveform_analysis.analyze_waveforms(
+                wf_data=wf_data,
+                fs=sampling,
+                baseline_range=(49, 973),
+                amplitude_threshold=amplitude_threshold,
+                max_waveforms=num_waveforms,
+                unit=unit,
+                get_edges=True
+            )
+
+            if not selected_waveforms:
+                print(f"⚠️ No waveforms selected from: {npz_path}")
+                continue
+
+            aligned = waveform_analysis.align_waveforms(selected_waveforms, rising_edges, mode="auto")
+            waveforms = [wf / np.max(wf) for wf in aligned]
+
+
+            all_waveforms.append(waveforms)
+            label = os.path.basename(npz_path).replace('.npz', '')
+            labels.append(label)
+
+        if not all_waveforms:
+            print("❌ No valid waveform sets found.")
+            return
+
+        # Plot
+        plt.figure(figsize=(10, 6))
+        for i, wf_set in enumerate(all_waveforms):
+            for wf in wf_set:
+                plt.plot(wf, alpha=0.5, label=labels[i] if wf is wf_set[0] else None)
+
+        plt.xlabel("Samples")
+        plt.ylabel(f"Amplitude (normalized)")
+        plt.title("Overlay of Aligned & Normalized Waveforms")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+
+        outname = "_vs_".join(labels) + "_comparison.png"
+        output_dir = os.path.join(Utils.find_data_directory(), "plots")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, outname)
+        plt.savefig(output_path, dpi=1200)
+        print(f"✅ Comparison plot saved to: {output_path}")
+
 
