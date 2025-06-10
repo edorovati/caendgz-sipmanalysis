@@ -1,6 +1,8 @@
 import re
 import numpy as np
+import glob
 import os
+from scipy.optimize import curve_fit
 
 ##################### general utility class ############################################################
 # This utility module provides a helper function to generate output filenames for threshold scan results.
@@ -22,30 +24,18 @@ import os
 
 
 class Utils:
-    
     @staticmethod
-    def find_data_directory(start_path=None, target_folder="data", max_depth=5):
+    def waveform_to_npz(waveforms, filename, sampling_rate):
         """
-        Search upward from the given path for a folder named `data`.
-
-        :param start_path: starting directory (default: directory of this file)
-        :param target_folder: name of the folder to find
-        :param max_depth: how many levels to go up
-        :return: absolute path to the found folder or raises FileNotFoundError
+        Save waveforms to a .npz file with metadata.
+        
+        Parameters:
+            waveforms (list of np.ndarray): List of waveforms to save.
+            filename (str): Name of the output .npz file.
+            sampling_rate (float): Sampling rate in MHz? let's see.
         """
-        if start_path is None:
-            start_path = os.path.dirname(__file__)
-        current_path = os.path.abspath(start_path)
-
-        for _ in range(max_depth):
-            candidate = os.path.join(current_path, target_folder)
-            if os.path.isdir(candidate):
-                return candidate
-            # Go one level up
-            current_path = os.path.dirname(current_path)
-
-        raise FileNotFoundError(f"Folder '{target_folder}' not found within {max_depth} levels from {start_path}")
-
+        np.savez(filename, waveforms=waveforms, sampling_rate=sampling_rate)
+        print(f"Waveforms saved to {filename}") 
     
     @staticmethod
     def generate_output_filename(npz_filename: str) -> str:
@@ -111,13 +101,15 @@ class Utils:
             rel_path = os.path.basename(rel_path)  # fallback to flat
         info["rel_path"] = rel_path
 
-        # Output path for saving figures or processed data
-        info["output_path"] = os.path.join("analysis", rel_path + ".png")
+        # Output path for saving figures or processed data. Let's create a 'plots' directory if it doesn't exist.
+        if not os.path.exists("../plots"):
+            os.makedirs("../plots")
+        info["output_path"] = os.path.join("../plots", rel_path)
 
         return info
     
     @staticmethod
-    def cell_to_seconds(num_cells, filename): 
+    def cell_to_seconds(num_cells, sampling = None): 
         """
         Convert a number of DRS4 cells (samples) into time in seconds,
         based on the sampling rate extracted from the filename.
@@ -127,8 +119,7 @@ class Utils:
         Returns:
             float or np.ndarray: Time duration in seconds.
         """
-        sampling_rate_hz = Utils.get_info(filename)["sampling_rate_hz"]
-        seconds = num_cells / sampling_rate_hz
+        seconds = num_cells / sampling
         return seconds
 
     @staticmethod
@@ -137,3 +128,78 @@ class Utils:
         Convert raw ADC values to millivolts assuming a 12-bit ADC centered at 2048.
         """
         return ((adc_array - 2048) / 4096.0) * 1000  # mV
+    
+    @staticmethod
+    def exponential_decay(t, A, tau, y0):
+        return A * np.exp(-t / tau) + y0
+
+    @staticmethod
+    def parse_range(col_range_str):
+        """Parses a string like '2', '2-4', '2-3,5' into a list of 0-based column indices."""
+        indices = set()
+        parts = col_range_str.split(',')
+        for part in parts:
+            if '-' in part:
+                start, end = map(int, part.split('-'))
+                indices.update(range(start - 1, end))
+            else:
+                indices.add(int(part) - 1)
+        return sorted(indices)
+
+    @staticmethod
+    def read_data_file(filepath, num_columns):
+        with open(filepath, 'r') as f:
+            lines = f.readlines()
+
+        try:
+            float(lines[1].split()[0])
+            header = [lines[0].strip()]
+            data = lines[1:]
+        except ValueError:
+            header = lines[:1]
+            data = lines[1:]
+
+        parsed_data = []
+        for line in data:
+            parts = line.strip().split()
+            if len(parts) != num_columns:
+                raise ValueError(f"Incompatible number of columns in {filepath}: expected {num_columns}, got {len(parts)}")
+            parsed_data.append([float(x) for x in parts])
+        return header, parsed_data
+
+  
+    @staticmethod
+    def merge_files(files_or_dir, num_columns, sum_columns, output_file):
+        if len(files_or_dir) == 1 and os.path.isdir(files_or_dir[0]):
+            files = glob.glob(os.path.join(files_or_dir[0], '*'))
+        else:
+            files = files_or_dir
+
+        if not files:
+            raise ValueError("No input files found.")
+
+        all_data = []
+        header_saved = None
+
+        for idx, file in enumerate(files):
+            header, data = Utils.read_data_file(file, num_columns)
+            if header_saved is None:
+                header_saved = header
+
+            if sum_columns:
+                if idx == 0:
+                    all_data = data
+                else:
+                    for i, row in enumerate(data):
+                        for col in sum_columns:
+                            all_data[i][col] += row[col]
+            else:
+                # Modalità accodamento
+                all_data.extend(data)
+
+        with open(output_file, 'w') as f_out:
+            if header_saved:
+                for h in header_saved:
+                    f_out.write(h + '\n')
+            for row in all_data:
+                f_out.write('\t'.join(f'{x:.2f}' if isinstance(x, float) else str(x) for x in row) + '\n')

@@ -347,9 +347,7 @@ class waveform_analysis:
         plt.savefig(output_path, dpi=1200)
         print(f"✅ Plot saved to: {output_path}")
         
-        # return waveforms # should i adapt the main function to return the waveforms?
-
-
+        return waveforms
 
 
 
@@ -511,6 +509,8 @@ class waveform_analysis:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         plt.savefig(output_path, dpi=1200)
         print(f"✅ Plot saved to: {output_path}")
+        
+        return single_peak_waveforms, avg_wf
 
 
 

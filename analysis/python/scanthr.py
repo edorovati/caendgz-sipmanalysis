@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 import numpy as np
 # Aggiungi queste due righe subito dopo gli altri import
-from hist import Hist
 import uproot
 
 
@@ -86,26 +85,3 @@ class ScanThreshold:
                 print(f"Threshold: {threshold_mv:.2f}, Counts: {count_above_threshold}")
                 
     
-    def intertime_distribution(self, waveforms_mv: list[np.ndarray], sign: int, threshold: float, sampling_rate: float, output_file_root: str):
-        all_intertimes = []
-        for wf in waveforms_mv:
-            transitions = self.get_transitions(wf, threshold, sign)
-            if len(transitions) < 2:
-                continue
-            inter_samples = np.diff(transitions)
-            inter_times = inter_samples / sampling_rate
-            all_intertimes.extend(inter_times)
-
-        if not all_intertimes:
-            print("Nessuna coppia di transizioni trovata. Istogramma non generato.")
-            return
-
-        # Crea istogramma con 100 bin tra 0 e max tempo
-        histo = Hist.new.Reg(100, 0, max(all_intertimes), name="dt", label="Intervallo temporale (s)").Double()
-        histo.fill(all_intertimes)
-
-        # Scrittura su file ROOT
-        with uproot.recreate(output_file_root) as f:
-            f["intertimes"] = histo.to_numpy()
-
-        print(f"Istogramma salvato nel file ROOT: {output_file_root}")
