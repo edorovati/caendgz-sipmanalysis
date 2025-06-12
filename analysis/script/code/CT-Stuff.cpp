@@ -47,6 +47,7 @@
 #include "/home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/root/graphics.h"
 #include "/home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/root/utils.h"
 #include "/home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/root/colorpalettemanager.h"
+#include "/home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/script/code/Helper_Function/RootUtils.h"
 
 #include "TCanvas.h"
 #include "TFile.h"
