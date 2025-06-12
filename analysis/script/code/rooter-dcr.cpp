@@ -1,16 +1,42 @@
 /******************************************************************************
  * @file dcr_analysis.cpp
- * @brief A script for Dark Count Rate (DCR) analysis.
+ * @brief Dark Count Rate (DCR) analysis macro.
  *
- * This script performs the following operations:
- *   - Reads input waveform data files.
- *   - Loads and subtracts reference baseline measurements (if available).
- *   - Computes derivatives to identify signal peaks.
- *   - Fits a Gaussian to the derivative to estimate the single-photon peak (1 PE).
- *   - Calculates Dark Count Rate (DCR) and Cross-Talk (CT) from integrated counts.
- *   - Dynamically assigns graph colors based on the overvoltage value.
- *   - Saves results (graphs, fit info, DCR/CT values) to a ROOT output file.
+ * This script performs:
+ *   - Reading of threshold‐count text files (data and optional reference).
+ *   - Baseline subtraction using a reference file.
+ *   - Numerical derivative to locate the single‐photon transition peak.
+ *   - Gaussian fit of the derivative to extract 1 PE amplitude and σ.
+ *   - Calculation of DCR and CT (cross‐talk) via threshold‐based counts.
+ *   - Dynamic color assignment based on bias voltage (overvoltage).
+ *   - Saving of graphs, fit parameters and DCR/CT results into a ROOT file.
+ *
+ * Usage:
+ *   // Prepare a vector of (filepath, voltage-string, type) tuples:
+ *   std::vector<std::tuple<std::string, std::string, std::string>> inputFiles = {
+ *     {"data/sn41-A1/vbias_52.5.txt", "52.5", "data"},
+ *     {"data/sn41-A1/vbias_53.0.txt", "53.0", "data"},
+ *     // … add as many data files as needed …
+ *     {"data/sn41-A1/vbias_52.0_ref.txt", "52.0", "reference"}  // optional baseline
+ *   };
+ *
+ *   // In ROOT prompt or in a .C macro:
+ *   .L dcr_analysis.cpp
+ *   dcr("output.root", inputFiles, "MySensorName");
+ *
+ *   // Arguments:
+ *   //   outputFileName : name of the ROOT file to create
+ *   //   input          : vector of tuples (filePath, voltage, fileType)
+ *   //                    fileType == "data" or "reference"
+ *   //   sensorName     : optional label printed on all canvases
+ *
+ * Notes:
+ *   - The reference file (first tuple with type "reference") is used
+ *     to subtract background counts before fitting.
+ *   - The 1 PE fit range is chosen around the derivative peak ± some window.
+ *   - DCR is taken at 0.5·PE, CT at 1.5·PE, then CT/DCR ratio is computed.
  ******************************************************************************/
+
 
 #include "/Users/edoardorovati/Desktop/HAMA-DRICH/analysis/root/analysis.h"
 #include "/Users/edoardorovati/Desktop/HAMA-DRICH/analysis/root/graphics.h"
