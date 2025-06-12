@@ -42,11 +42,11 @@
  *   - Helps visualize systematic behavior of sensors as a function of operating voltage.
  ******************************************************************************/
 
-#include "/Users/edoardorovati/Desktop/HAMA-DRICH/analysis/root/analysis.h"
-#include "/Users/edoardorovati/Desktop/HAMA-DRICH/analysis/root/graphics.h"
-#include "/Users/edoardorovati/Desktop/HAMA-DRICH/analysis/root/utils.h"
-#include "/Users/edoardorovati/Desktop/HAMA-DRICH/analysis/root/colorpalettemanager.h"
-#include "/Users/edoardorovati/Desktop/HAMA-DRICH/analysis/script/code/Helper_Function/RootUtils.h"
+
+#include "/home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/root/analysis.h"
+#include "/home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/root/graphics.h"
+#include "/home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/root/utils.h"
+#include "/home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/root/colorpalettemanager.h"
 
 #include "TCanvas.h"
 #include "TFile.h"
