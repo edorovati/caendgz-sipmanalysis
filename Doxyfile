@@ -991,8 +991,7 @@ WARN_LOGFILE           =
 # spaces. See also FILE_PATTERNS and EXTENSION_MAPPING
 # Note: If this tag is empty the current directory is searched.
 
-INPUT                  = analysis/root/analysis.h analysis/root/graphics.h analysis/root/utils.h analysis/root/colorpalettemanager.h analysis/script/code/rooter-dcr.cpp  analysis/script/code/singlepe.cpp analysis/script/code/CT-Stuff.cpp analysis/script/code/Helper_Function/RootUtils.h 
-
+INPUT                  = analysis/root/analysis.h analysis/root/graphics.h analysis/root/utils.h analysis/root/colorpalettemanager.h analysis/script/code/rooter-dcr.cpp  analysis/script/code/singlepe.cpp analysis/script/code/CT-Stuff.cpp analysis/script/code/Helper_Function/RootUtils.h analysis/python/filters.py analysis/python/plotter.py analysis/python/plotting.py analysis/python/scanthr.py analysis/python/utils.py analysis/python/waveform_analysis.py
 # This tag can be used to specify the character encoding of the source files
 # that Doxygen parses. Internally Doxygen uses the UTF-8 encoding. Doxygen uses
 # libiconv (or the iconv built into libc) for the transcoding. See the libiconv
@@ -1081,6 +1080,7 @@ FILE_PATTERNS          = *.c \
                          *.vhdl \
                          *.ucf \
                          *.qsf \
+                         *.py \
                          *.ice
 
 # The RECURSIVE tag can be used to specify whether or not subdirectories should
