@@ -153,8 +153,9 @@ void dcr(const TString& outputFileName,
     std::vector<double> derivErrors;
     size_t N = std::min(counts.size(), thresholds.size());
     for (size_t i = 0; i + 1 < N; ++i) {
-      double dy = counts[i + 1] - counts[i];
-      derivErrors.push_back(sqrt(std::abs(dy)));
+        double dx = thresholds[i+1] - thresholds[i];
+        double err = std::round( std::sqrt( std::abs(derivate[i]) ) / std::abs(dx) );
+        derivErrors.push_back(err);
     }
 
     TGraphErrors* gDerivOrig = Utils::createGraph(sMedie, derivate, std::vector<double>(sMedie.size(), 0.0), derivErrors);
