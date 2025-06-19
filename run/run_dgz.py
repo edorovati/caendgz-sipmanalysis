@@ -29,8 +29,11 @@ parser.add_argument("--vbias", type=float, required=True,
     help="Bias voltage applied to the SiPM (in volts, e.g., 35)")
 parser.add_argument("--folder", type=str, default=None,
                     help="Optional subfolder in /data where to save output files.")
-parser.add_argument('--trg', choices=['NIM', 'sw'], default='sw', help="Trigger type: 'NIM' or 'sw'")
+parser.add_argument('--trg', choices=['NIM', 'laser', 'sw'], default='sw', help="Trigger type: 'NIM' 'laser' (with NIM) or 'sw'")
 parser.add_argument("--shift_waveforms", action="store_true", help="Shift waveforms by first_cell modulo 1024")
+parser.add_argument('--filename', type=str, default='output_data.npz',
+                    help='Name of the .npz file to save (default: output_data.npz)')
+parser.add_argument('--plot', action='store_true', help='Plot the waveforms after acquisition')
 args = parser.parse_args()
 
 # safety check for bias voltage
@@ -57,7 +60,6 @@ HOST = 'localhost'
 PORT = 30001
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-OUTPUT_FILE = os.path.join(save_dir, f"{timestamp}_waveforms_bias{args.vbias}V_{int(args.sampling)/1000}GS.root")
 NPZ_FILE = os.path.join(save_dir, f"{timestamp}_waveforms_bias{args.vbias}V_{int(args.sampling)/1000}GS.npz")
 TREE_NAME = "waveform_tree"
 
@@ -75,6 +77,10 @@ def NIM_trg():
     subprocess.run("/eu/aimtti/aimtti-cmd.py --address aimtti-tgp3152-00 --list /eu/aimtti-tgp3152/configs/NIM_trg.config", shell=True, check=True)
     return True
     
+def laser_trg():
+    """Set up the NIM TRG with the pulser."""
+    subprocess.run("/eu/aimtti/aimtti-cmd.py --address aimtti-tgp3152-00 --list /home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/configs/laser_trg.conf", shell=True, check=True)
+    return True
 
 def acquire_data(chmask, correction):
     """Acquire waveform data from the digitizer."""
@@ -228,177 +234,63 @@ def print_trigger_tags(data, selected_ch=None):
             trigger_tag = event[0]["trigger_tag"]
             print(f"Event {event_number}, Channel {ch}: Trigger Tag = {trigger_tag}")
 
-
-
-
-
-
-
-# if __name__ == "__main__":
-#     selected_channels = args.channel if args.channel else None
-#     min_events = args.min_events
-#     valid_waveforms = []
-#     run_count = 0
-
-#     command_queue = queue.Queue()
-#     listener_thread = threading.Thread(target=command_listener, args=(command_queue,))
-#     listener_thread.daemon = True
-#     listener_thread.start()
-#     plotted_waveforms = []
-#     with rwaveclient(HOST, PORT, verbose=True) as rwc:
-#         if rwc is None:
-#             sys.exit("❌ Failed to connect to the digitizer.")
-        
-#         print("🔌 Configuring digitizer...")
-#         close_acquisition(rwc)
-
-#         with open(args.log_file, 'w') as log_file:
-#             log_file.write(f"Selected channels: {selected_channels}\n")
-
-#             while True:
-#                 try:
-#                     cmd = command_queue.get(timeout=0.1)
-#                     if cmd == 'exit':
-#                         print("👋 Exiting...")
-#                         plt.figure(figsize=(10, 6))
-#                         for i in range(min(100, len(plotted_waveforms))):
-#                             plt.plot(plotted_waveforms[i].squeeze(), label=f'Waveform {i+1}')
-#                         plt.title('Sample Waveforms')
-#                         plt.xlabel('Sample Number')
-#                         plt.ylabel('Amplitude (ADC)')
-#                         plt.legend()
-#                         plt.grid()
-#                         plt.show()
-
-#                         break
-                    
-#                     elif cmd == 'start':
-#                         print("▶️  Starting acquisition...")
-#                         run_count += 1
-#                         pbar = tqdm(total=min_events, desc="Accumulating waveforms", ncols=100, unit="waveforms")
-#                         configure_dgz(rwc, 0x0003, correction=True)
-
-#                         while len(valid_waveforms) < min_events:
-#                             # check if user typed 'stop'
-#                             if not command_queue.empty():
-#                                 subcmd = command_queue.get_nowait()
-#                                 if subcmd == 'stop':
-#                                     print("⏸️  Acquisition paused.")
-#                                     break
-#                                 elif subcmd == 'exit':
-#                                     raise KeyboardInterrupt
-                            
-#                             print(f"\nRun {run_count}: Accumulating waveforms... ({len(valid_waveforms)} / {min_events})")
-#                             if args.trg == 'NIM':
-#                                 data = acquire_data_NIM(rwc)
-#                             else:
-#                                 data = acquire_data(0x0003, correction=True)
-
-#                             if data is None:
-#                                 sys.exit("❌ Acquisition failed.")
-
-#                             event_data = handle_data(data, selected_ch=selected_channels, shift_waveforms=args.shift_waveforms)
-#                             if event_data is None:
-#                                 sys.exit("❌ No events to process.")
-
-#                             if args.filter_ADC is not None:
-#                                 filtered = apply_filter(event_data, threshold=args.filter_ADC)
-#                                 for ch_key, waveforms in filtered.items():
-#                                     valid_waveforms.extend(waveforms)
-#                             else:
-#                                 for event in event_data:
-#                                     for ch_key in event:
-#                                         if ch_key.startswith("waveform_ch"):
-#                                             valid_waveforms.append(event[ch_key])
-
-#                             pbar.update(len(valid_waveforms) - pbar.n)
-#                             log_file.write(f"Run {run_count}: {len(valid_waveforms)} valid waveforms accumulated\n")
-
-#                         pbar.close()
-
-#                         # plot and save only after a run is completed
-#                         if len(valid_waveforms) >= min_events:
-#                             plt.figure(figsize=(10, 6))
-#                             for i in range(min(100, len(valid_waveforms))):
-#                                 plt.plot(valid_waveforms[i].squeeze(), label=f'Waveform {i+1}')
-#                                 plotted_waveforms.append(valid_waveforms[i])
-#                             plt.title('Sample Waveforms')
-#                             plt.xlabel('Sample Number')
-#                             plt.ylabel('Amplitude (ADC)')
-#                             plt.legend()
-#                             plt.grid()
-#                             plt.show()
-
-#                             print(f"\n💾 {len(valid_waveforms)} valid waveforms accumulated. Saving to NPZ.")
-#                             np.savez_compressed(NPZ_FILE, waveforms=np.array(valid_waveforms))
-#                             log_file.write(f"Acquisition complete. {len(valid_waveforms)} waveforms saved.\n")
-                            
-#                             valid_waveforms.clear()
-
-#                 except queue.Empty:
-#                     continue
-#                 except KeyboardInterrupt:
-#                     print("👋 Interrupted. Closing acquisition.")
-#                     break
-
-#         close_acquisition(rwc)
-#         print(f"Waveforms saved in: {NPZ_FILE}")
-
-#         #plot the waveforms
-#         if plotted_waveforms:
-#             plt.figure(figsize=(10, 6))
-#             for i in range(min(100, len(plotted_waveforms))):
-#                 plt.plot(plotted_waveforms[i].squeeze(), label=f'Waveform {i+1}')
-#             plt.title('Sample Waveforms')
-#             plt.xlabel('Sample Number')
-#             plt.ylabel('Amplitude (ADC)')
-#             plt.legend()
-#             plt.grid()
-#             plt.show()
-
 if __name__ == "__main__":
     if args.trg == 'NIM':
-        # print("🔌 Starting NIM pulser...")
         print("NIM pulser should be already ON from the .sh script...")
         NIM_trg()
+    elif args.trg == 'laser':
+        print("Starting laser pulser...")
+        laser_trg()
 
     selected_channels = args.channel if args.channel else None
     print(f"Selected channels: {selected_channels}")
 
     min_events = args.min_events
-    print(f"Accumulating at least {min_events} valid waveforms.")
+    print(f"Accumulating at least {min_events} valid waveforms total.")
 
-    valid_waveforms = []
+    # Initialize valid_waveforms as dict: keys=channel, values=list of waveforms
+    valid_waveforms = {}
+    if selected_channels:
+        for ch in selected_channels:
+            # Assuming channel strings like 'waveform_ch0', 'waveform_ch1', etc.
+            valid_waveforms[ch] = []
+    else:
+        # If no channels specified, initialize empty dict — will fill on the fly
+        valid_waveforms = {}
+
     run_count = 0
 
     with rwaveclient(HOST, PORT, verbose=True) as rwc:
         if rwc is None:
             sys.exit("❌ Failed to connect to the digitizer.")
-        print("🔌 Configuring digitizer...")
+        print("Configuring digitizer...")
         close_acquisition(rwc)
-            
+
+        valid_waveforms = {ch: [] for ch in selected_channels}
+        run_count = 0
+
         with open(args.log_file, 'w') as log_file:
-            log_file.write(f"Acquisition started. Accumulating at least {min_events} waveforms.\n")
+            log_file.write(f"Acquisition started. Accumulating at least {min_events} waveforms per channel.\n")
             log_file.write(f"Selected channels: {selected_channels}\n")
 
-            pbar = tqdm(total=min_events, desc="Accumulating waveforms", ncols=100, unit="waveforms")
+            pbar = tqdm(total=min_events, desc="Min waveforms per channel", ncols=100, unit="waveforms")
 
             configure_dgz(rwc, 0x0003, correction=True)
-            
-            while len(valid_waveforms) < min_events:
+
+            while min(len(valid_waveforms[ch]) for ch in selected_channels) < min_events:
                 run_count += 1
-                print(f"\nRun {run_count}: Accumulating waveforms... ({len(valid_waveforms)} / {min_events})")
-                
-                # Qui scegli la funzione in base al trigger
-                if args.trg == 'NIM':
+                print(f"\nRun {run_count}: Accumulating... (min={min(len(valid_waveforms[ch]) for ch in selected_channels)} / {min_events})")
+
+                if args.trg == 'laser':
+                    print("🔌 Starting laser acquisition with NIM trg...")
+                    data = acquire_data_NIM(rwc)
+                elif args.trg == 'NIM':
                     data = acquire_data_NIM(rwc)
                 else:
                     data = acquire_data(0x0003, correction=True)
-                
+
                 if data is None:
                     sys.exit("❌ Acquisition failed.")
-
-                # print_trigger_tags(data, selected_ch=selected_channels)
 
                 event_data = handle_data(data, selected_ch=selected_channels, shift_waveforms=args.shift_waveforms)
                 if event_data is None:
@@ -407,29 +299,159 @@ if __name__ == "__main__":
                 if args.filter_ADC is not None:
                     print(f"🔍 Applying filter: peak-to-peak > {args.filter_ADC} ADC")
                     filtered = apply_filter(event_data, threshold=args.filter_ADC)
-
                     for ch_key, waveforms in filtered.items():
-                        valid_waveforms.extend(waveforms)
-                    print(f"Waveforms after filtering: {len(valid_waveforms)}")
+                        ch = int(ch_key.replace("waveform_ch", ""))
+                        if ch in valid_waveforms:
+                            valid_waveforms[ch].extend(waveforms)
                 else:
                     print("No filter applied. Saving all waveforms.")
                     for event in event_data:
                         for ch_key in event:
                             if ch_key.startswith("waveform_ch"):
-                                valid_waveforms.append(event[ch_key])
+                                ch = int(ch_key.replace("waveform_ch", ""))
+                                if ch in valid_waveforms:
+                                    valid_waveforms[ch].append(event[ch_key])
 
-                pbar.update(len(valid_waveforms) - pbar.n)
-                log_file.write(f"Run {run_count}: {len(valid_waveforms)} valid waveforms accumulated\n")
+                min_valid = min(len(valid_waveforms[ch]) for ch in selected_channels)
+                pbar.update(min_valid - pbar.n)
+                log_file.write(f"Run {run_count}: waveforms per channel = { {ch: len(valid_waveforms[ch]) for ch in selected_channels} }\n")
 
-            
-            print(f"\n{len(valid_waveforms)} valid waveforms accumulated. Saving to NPZ.")
-            np.savez_compressed(NPZ_FILE, waveforms=np.array(valid_waveforms))
-            log_file.write(f"Acquisition complete. {len(valid_waveforms)} valid waveforms saved.\n")
+            print(f"\n✅ Done. At least {min_events} waveforms per channel acquired.")
+
+            for ch_key, waves in valid_waveforms.items():
+                ch_filename = f"{args.filename}_ch{ch_key}.npz"
+                ch_output_path = os.path.join(save_dir, ch_filename)
+                np.savez_compressed(ch_output_path, waveforms=np.array(waves))
+                print(f"🔸 Saved {len(waves)} waveforms for channel {ch_key} to {ch_output_path}")
+
+
+            # ⬇️ Plotting (tutti i canali o uno solo)
+            if args.plot:
+                plt.figure(figsize=(14, 8))
+                x_time = (np.arange(1024) / args.sampling * 1e3)  # ns
+                max_plot_waves = 1000
+                for ch in selected_channels:
+                    waves = valid_waveforms[ch]
+                    for i in range(min(len(waves), max_plot_waves)):
+                        plt.plot(x_time, waves[i], alpha=0.5, label=f'ch{ch} Waveform {i+1}')
+                plt.title('Sample Waveforms per Channel')
+                plt.xlabel('Time [ns]')
+                plt.ylabel('Amplitude [ADC]')
+                plt.legend(fontsize='small', ncol=2)
+                plt.grid()
+                plt.tight_layout()
+                plt.show()
+
+            print("Waveforms saved in per-channel .npz files.")
             pbar.close()
             close_acquisition(rwc)
+# # Uncomment the following lines to run the script directly
+
+
+
+# if __name__ == "__main__":
+#     if args.trg == 'NIM':
+#         # print("🔌 Starting NIM pulser...")
+#         print("NIM pulser should be already ON from the .sh script...")
+#         NIM_trg()
+#     elif args.trg == 'laser':
+#         print("🔌 Starting laser pulser...")
+#         laser_trg() 
+
+#     selected_channels = args.channel if args.channel else None
+#     print(f"Selected channels: {selected_channels}")
+
+#     min_events = args.min_events
+#     print(f"Accumulating at least {min_events} valid waveforms.")
+
+#     valid_waveforms = []
+#     run_count = 0
+
+#     with rwaveclient(HOST, PORT, verbose=True) as rwc:
+#         if rwc is None:
+#             sys.exit("❌ Failed to connect to the digitizer.")
+#         print("🔌 Configuring digitizer...")
+#         close_acquisition(rwc)
+            
+#         with open(args.log_file, 'w') as log_file:
+#             log_file.write(f"Acquisition started. Accumulating at least {min_events} waveforms.\n")
+#             log_file.write(f"Selected channels: {selected_channels}\n")
+
+#             pbar = tqdm(total=min_events, desc="Accumulating waveforms", ncols=100, unit="waveforms")
+
+#             configure_dgz(rwc, 0x0003, correction=True)
+            
+#             while len(valid_waveforms) < min_events:
+#                 run_count += 1
+#                 print(f"\nRun {run_count}: Accumulating waveforms... ({len(valid_waveforms)} / {min_events})")
+                
+#                 # Qui scegli la funzione in base al trigger: NIM O LASER -->NIM
+                
+#                 if args.trg == 'laser':
+#                     print("🔌 Starting laser acquisition with NIM trg...")
+#                     data = acquire_data_NIM(rwc)
+#                 elif args.trg == 'NIM':
+#                     data = acquire_data_NIM(rwc)
+#                 else:
+#                     data = acquire_data(0x0003, correction=True)
+                
+#                 if data is None:
+#                     sys.exit("❌ Acquisition failed.")
+
+#                 # print_trigger_tags(data, selected_ch=selected_channels)
+
+#                 event_data = handle_data(data, selected_ch=selected_channels, shift_waveforms=args.shift_waveforms)
+#                 if event_data is None:
+#                     sys.exit("❌ No events to process.")
+
+#                 if args.filter_ADC is not None:
+#                     print(f"🔍 Applying filter: peak-to-peak > {args.filter_ADC} ADC")
+#                     filtered = apply_filter(event_data, threshold=args.filter_ADC)
+
+#                     for ch_key, waveforms in filtered.items():
+#                         valid_waveforms.extend(waveforms)
+#                     print(f"Waveforms after filtering: {len(valid_waveforms)}")
+#                 else:
+#                     print("No filter applied. Saving all waveforms.")
+#                     for event in event_data:
+#                         for ch_key in event:
+#                             if ch_key.startswith("waveform_ch"):
+#                                 valid_waveforms.append(event[ch_key])
+
+#                 pbar.update(len(valid_waveforms) - pbar.n)
+#                 log_file.write(f"Run {run_count}: {len(valid_waveforms)} valid waveforms accumulated\n")
+
+            
+#             print(f"\n{len(valid_waveforms)} valid waveforms accumulated. Saving to NPZ.")
+            
+#             user_filename = args.filename
+#             if not user_filename.endswith(".npz"):
+#                 user_filename += ".npz"
+#             output_path = os.path.join(save_dir, user_filename)
+
+#             np.savez_compressed(output_path, waveforms=np.array(valid_waveforms))
+            
+#             #plotting option: plot N waveforms in the same canvas
+#             # with the correct conversion to ns depending on the sampling rate
+#             x_time = (np.arange(1024)/args.sampling * 1e3)  # ns
+#             if args.plot:
+#                 plt.figure(figsize=(12, 6))
+#                 for i in range(min(1000, len(valid_waveforms))):
+#                     plt.plot(x_time, valid_waveforms[i], label=f'Waveform {i+1}', alpha=0.5)
+#                 plt.title('Sample Waveforms')
+#                 plt.xlabel('Sample Index')
+#                 plt.ylabel('Amplitude (ADC)')
+#                 plt.legend()
+#                 plt.grid()
+#                 plt.show()
+        
+#             print(f"Waveforms saved in: {output_path}")
+#             pbar.close()
+#             close_acquisition(rwc)
+            
+            
             
 
-        print(f"Waveforms saved in: {NPZ_FILE}")
         
         
         
