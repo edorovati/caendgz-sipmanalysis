@@ -111,6 +111,10 @@ class waveform_analysis:
                 return i
         return 0
 
+    @staticmethod
+    def exp_decay(t, A, tau, C):
+        return A * np.exp(-t / tau) + C
+    
 
     # SASSANDUM EST! NOT USED ANYMORE!
     # @staticmethod
@@ -422,46 +426,58 @@ class waveform_analysis:
     # LATEST + DEBUG...
     ###########################
     
-    def compute_tau(waveforms, avg_wf, sampling, output_filename=None):
+    def compute_tau(waveforms, sampling=1000, output_filename=None):
+        """
+        Calcola tau (tempo di decadimento a 1/e dal picco) su una o più waveform.
+        - waveforms: array 1D (una sola wf) o 2D (più wf)
+        - sampling: frequenza di campionamento in MHz
+        - output_filename: se specificato, salva i risultati
+
+        Restituisce una lista di tuple: (tau, tau_err, peak_val)
+        """
+        waveforms = np.asarray(waveforms)
         dt = 1e3 / sampling  # ns per sample
-        print(f"Sampling rate: {sampling} MHz")
-        print(f"dt (ns per sample): {dt:.3f}")
+        print(f"Sampling rate: {sampling} MHz → dt = {dt:.3f} ns")
 
-        peak_idx = np.argmax(avg_wf)
-        peak_val = avg_wf[peak_idx]
-        target_val = peak_val / np.e
-        tau_ns = None
-        tau_err_ns = None
+        results = []
 
-        waveforms_array = np.array(waveforms)
-        point_std = np.std(waveforms_array, axis=0, ddof=1)
-        err_mean = point_std / np.sqrt(len(avg_wf))
+        # Se è una sola waveform, rendila 2D con una sola riga
+        if waveforms.ndim == 1:
+            waveforms = waveforms[np.newaxis, :]
 
-        for i in range(peak_idx + 1, len(avg_wf)):
-            if avg_wf[i] <= target_val:
-                tau_ns = (i - peak_idx) * dt
-                slope = abs(avg_wf[i] - avg_wf[i - 1])
-                if slope < 1e-12:
-                    slope = 1e-12
-                tau_err_ns = dt * (err_mean[i] / slope)
-                break
+        for idx, wf in enumerate(waveforms):
+            peak_idx = np.argmax(wf)
+            peak_val = wf[peak_idx]
+            target_val = peak_val / np.e
+            tau_ns = None
+            tau_err_ns = None
 
-        if tau_ns is not None:
-            print(f"Tau stimato: {tau_ns:.3f} ± {tau_err_ns:.3f} ns")
-            if output_filename is None:
-                output_filename = "./RICCARDO.txt"
+            std = np.std(wf, ddof=1)
+            err = std / np.sqrt(len(wf))
 
+            for i in range(peak_idx + 1, len(wf)):
+                if wf[i] <= target_val:
+                    tau_ns = (i - peak_idx) * dt
+                    slope = abs(wf[i] - wf[i - 1])
+                    slope = max(slope, 1e-12)
+                    tau_err_ns = dt * (err / slope)
+                    break
+
+            if tau_ns is not None:
+                print(f"[{idx+1}] τ = {tau_ns:.2f} ± {tau_err_ns:.2f} ns (peak = {peak_val:.2f})")
+                results.append((tau_ns, tau_err_ns, peak_val))
+            else:
+                print(f"[{idx+1}] ⚠️ Nessun crossing trovato per 1/e")
+
+        if results and output_filename:
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
             with open(output_filename, "w") as f:
-                f.write("Tau(ns)\tTau_error(ns)\tPeak_val\n")
-                f.write(f"{tau_ns:.6f}\t{tau_err_ns:.6f}\t{peak_val:.6f}\n")
-            print(f"✅ Risultati (tau + errore + peak) salvati in {output_filename}")
-        else:
-            print("⚠️ Nessun crossing trovato per 1/e decay!")
+                for r in results:
+                    f.write(f"{r[0]:.6f}\t{r[1]:.6f}\t{r[2]:.6f}\n")
+            print(f"✅ Risultati salvati in {output_filename}")
 
-        return tau_ns, tau_err_ns
+        return results
 
-    
     
     @staticmethod
     def persistence_4_tau(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100,
@@ -612,103 +628,6 @@ class waveform_analysis:
 ###########################
 # DECAY TIME WITH FIT
 ###########################
-
-    @staticmethod
-    def fit_decay_and_plot_tau_distribution(
-        waveforms,
-        sampling=None,
-        plot=False,
-        single_pe_filter=False,
-        filename=None,
-        txt_output=None,
-        fit_window=50,             # max punti da fittare
-        baseline_window=50,        # punti iniziali per stimare la baseline
-        tail_sigma_cut=2.0         # soglia per fermare il fit se y < baseline + Nσ
-    ):
-        """
-        Fit esponenziale del decadimento per ciascuna waveform.
-        Restituisce tau, errore, A, errore A, C, errore C.
-        """
-        if txt_output is None and filename:
-            txt_output = os.path.splitext(filename)[0] + ".txt"
-
-        taus = []
-        tau_errors = []
-        amps = []
-        amp_errors = []
-        offsets = []
-        offset_errors = []
-        fitted_waveforms = []
-
-        sampling_rate_hz = sampling * 1e6
-        time_step_ns = 1e9 / sampling_rate_hz
-
-        for wf in waveforms:
-            if single_pe_filter:
-                peaks, _ = find_peaks(wf, height=4.0)
-                if len(peaks) != 1:
-                    continue
-            # wf = Filters.lowpass_filter(wf, sampling_rate_hz, cutoff_hz=200e6, order=4)
-            # Baseline
-            baseline = np.mean(wf[:baseline_window])
-            baseline_std = np.std(wf[:baseline_window])
-
-            # Fit dal massimo in poi
-            peak_idx = np.argmax(wf)
-            tail = wf[peak_idx:]
-
-            # Taglia la coda dove si rientra nella baseline
-            cut_idx = len(tail)
-            for i, v in enumerate(tail):
-                if v < baseline + tail_sigma_cut * baseline_std:
-                    cut_idx = i
-                    break
-
-            cut_idx = min(cut_idx, fit_window)
-            y = tail[:cut_idx]
-            t = np.arange(len(y)) * time_step_ns
-
-            if len(y) < 5:
-                continue
-
-            A0 = y[0]
-            tau0 = 50.0
-            C0 = baseline
-
-            try:
-                popt, pcov = curve_fit(
-                    waveform_analysis.exp_decay, t, y,
-                    p0=[A0, tau0, C0],
-                    bounds=([0, 1, -np.inf], [np.inf, 200, np.inf])
-                )
-                A_fit, tau_fit, C_fit = popt
-                A_err, tau_err, C_err = np.sqrt(np.diag(pcov))
-
-                taus.append(tau_fit)
-                tau_errors.append(tau_err)
-                amps.append(A_fit)
-                amp_errors.append(A_err)
-                offsets.append(C_fit)
-                offset_errors.append(C_err)
-                fitted_waveforms.append(wf)
-
-            except Exception:
-                continue
-
-        # Salva su file
-        if taus and txt_output:
-            os.makedirs(os.path.dirname(txt_output), exist_ok=True)
-            with open(txt_output, "w") as f:
-                for tau, dtau, A, dA, C, dC in zip(
-                    taus, tau_errors, amps, amp_errors, offsets, offset_errors):
-                    f.write(f"{tau:.6f}\t{dtau:.6f}\t{A:.6f}\t{dA:.6f}\t{C:.6f}\t{dC:.6f}\n")
-            print(f"✅ Risultati salvati in '{txt_output}'")
-
-        return taus, tau_errors, amps, amp_errors, offsets, offset_errors, fitted_waveforms
-
-
-
-   
     @staticmethod
     def decay_time(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100,
                 color='green', align="False", single_pe_filter=False, sampling=None,
@@ -755,3 +674,95 @@ class waveform_analysis:
 
         return taus, tau_errors, amps, amp_errors, offsets, offset_errors
     
+    
+
+    @staticmethod
+    def fit_waveform_tau(
+        waveforms,
+        sampling=None,
+        filename=None,
+        txt_output=None,
+        fit_window=50,
+        baseline_window=50,     # ignorato per ora
+        tail_sigma_cut=2.0      # ignorato per ora
+    ):
+        import scipy.signal
+
+        if txt_output is None and filename:
+            txt_output = os.path.splitext(filename)[0] + ".txt"
+
+        taus, tau_errors, amps, amp_errors, offsets, offset_errors, fitted_waveforms = (
+            [], [], [], [], [], [], []
+        )
+
+        sampling_rate_hz = sampling * 1e6
+        time_step_ns = 1e9 / sampling_rate_hz
+
+        print(f"\n🔍 Inizio fit per {len(waveforms)} waveform(s)...\n")
+
+        for idx, wf in enumerate(waveforms):
+            print(f"\n➡️ Waveform {idx+1}/{len(waveforms)}")
+
+            # baseline a zero e soglia minima
+            min_height = 4.0  # in mV, direttamente
+
+            # Trovo tutti i picchi
+            peaks, props = scipy.signal.find_peaks(wf, height=min_height)
+
+            # Prendo solo quelli con rising-edge tra 145 e 155
+            valid_peaks = [p for p in peaks if 145 <= p <= 155]
+            if not valid_peaks:
+                print(f"⚠️ Nessun picco tra 145 e 155 con altezza ≥{min_height} mV. Skip.")
+                continue
+
+            peak_idx = valid_peaks[0]
+            peak_val = wf[peak_idx]
+            print(f"✅ Picco valido: idx {peak_idx}, ampiezza = {peak_val:.3f} mV")
+
+            tail = wf[peak_idx : peak_idx + fit_window]
+            t = np.arange(len(tail)) * time_step_ns
+
+            if len(tail) < 5:
+                print("⚠️ Troppo pochi punti per il fit. Skip.")
+                continue
+
+            A0 = tail[0]
+            tau0 = 20.0
+            C0 = 0.0  # baseline
+
+            try:
+                popt, pcov = curve_fit(
+                    waveform_analysis.exp_decay, t, tail,
+                    p0=[A0, tau0, C0],
+                    bounds=([0, 1, -np.inf], [np.inf, 200, np.inf])
+                )
+                A_fit, tau_fit, C_fit = popt
+                err = np.sqrt(np.diag(pcov))
+
+                print(f"✅ Fit: τ = {tau_fit:.2f}±{err[1]:.2f} ns, A = {A_fit:.2f}, C = {C_fit:.2f}")
+
+                taus.append(tau_fit)
+                tau_errors.append(err[1])
+                amps.append(A_fit)
+                amp_errors.append(err[0])
+                offsets.append(C_fit)
+                offset_errors.append(err[2])
+                fitted_waveforms.append(wf)
+
+            except Exception as e:
+                print(f"❌ Fit fallito su picco indice {peak_idx}: {e}")
+                continue
+
+        # Scrittura file
+        if taus and txt_output:
+            os.makedirs(os.path.dirname(txt_output), exist_ok=True)
+            with open(txt_output, "w") as f:
+                for t0, dt0, A, dA, C, dC in zip(
+                    taus, tau_errors, amps, amp_errors, offsets, offset_errors
+                ):
+                    f.write(f"{t0:.6f}\t{dt0:.6f}\t{A:.6f}\t{dA:.6f}\t{C:.6f}\t{dC:.6f}\n")
+            print(f"\n📄 Risultati salvati in '{txt_output}'")
+        else:
+            print("⚠️ Nessuna waveform fittata con successo.")
+
+        return taus, tau_errors, amps, amp_errors, offsets, offset_errors, fitted_waveforms
