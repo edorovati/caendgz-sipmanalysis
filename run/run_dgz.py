@@ -242,60 +242,70 @@ if __name__ == "__main__":
         print("Starting laser pulser...")
         laser_trg()
 
-    selected_channels = args.channel if args.channel else None
+    # Print selected channels
+    selected_channels = args.channel if args.channel else []
     print(f"Selected channels: {selected_channels}")
 
-    min_events = args.min_events
-    print(f"Accumulating at least {min_events} valid waveforms total.")
+    # Warn if no channels specified
+    if not selected_channels:
+        print("⚠️ Warning: No channels specified, acquisition may fail or use default channels.")
 
-    # Initialize valid_waveforms as dict: keys=channel, values=list of waveforms
-    valid_waveforms = {}
-    if selected_channels:
-        for ch in selected_channels:
-            # Assuming channel strings like 'waveform_ch0', 'waveform_ch1', etc.
-            valid_waveforms[ch] = []
-    else:
-        # If no channels specified, initialize empty dict — will fill on the fly
-        valid_waveforms = {}
+    # Compute the channel mask from selected channels
+    chmask = 0
+    for ch in selected_channels:
+        chmask |= (1 << ch)
+    print(f"Using channel mask: 0x{chmask:04x}")
+
+    min_events = args.min_events
+    print(f"Accumulating at least {min_events} valid waveforms per channel.")
+
+    # Initialize dictionary to store valid waveforms per channel
+    valid_waveforms = {ch: [] for ch in selected_channels}
 
     run_count = 0
 
+    # Connect to the digitizer client
     with rwaveclient(HOST, PORT, verbose=True) as rwc:
         if rwc is None:
             sys.exit("❌ Failed to connect to the digitizer.")
+
         print("Configuring digitizer...")
         close_acquisition(rwc)
 
-        valid_waveforms = {ch: [] for ch in selected_channels}
-        run_count = 0
+        # Configure digitizer with dynamic channel mask
+        configure_dgz(rwc, chmask, correction=True)
 
         with open(args.log_file, 'w') as log_file:
             log_file.write(f"Acquisition started. Accumulating at least {min_events} waveforms per channel.\n")
             log_file.write(f"Selected channels: {selected_channels}\n")
 
+            # Progress bar for acquisition
             pbar = tqdm(total=min_events, desc="Min waveforms per channel", ncols=100, unit="waveforms")
 
-            configure_dgz(rwc, 0x0003, correction=True)
-
+            # Continue acquisition until min_events reached on all selected channels
             while min(len(valid_waveforms[ch]) for ch in selected_channels) < min_events:
                 run_count += 1
-                print(f"\nRun {run_count}: Accumulating... (min={min(len(valid_waveforms[ch]) for ch in selected_channels)} / {min_events})")
+                min_valid = min(len(valid_waveforms[ch]) for ch in selected_channels)
+                print(f"\nRun {run_count}: Accumulating... (min={min_valid} / {min_events})")
 
+                # Acquire data depending on trigger type
                 if args.trg == 'laser':
-                    print("🔌 Starting laser acquisition with NIM trg...")
+                    print("🔌 Starting laser acquisition with NIM trigger...")
                     data = acquire_data_NIM(rwc)
                 elif args.trg == 'NIM':
                     data = acquire_data_NIM(rwc)
                 else:
-                    data = acquire_data(0x0003, correction=True)
+                    data = acquire_data(chmask, correction=True)
 
                 if data is None:
                     sys.exit("❌ Acquisition failed.")
 
+                # Process acquired data, optionally shift waveforms
                 event_data = handle_data(data, selected_ch=selected_channels, shift_waveforms=args.shift_waveforms)
                 if event_data is None:
                     sys.exit("❌ No events to process.")
 
+                # Apply filtering if filter_ADC is set
                 if args.filter_ADC is not None:
                     print(f"🔍 Applying filter: peak-to-peak > {args.filter_ADC} ADC")
                     filtered = apply_filter(event_data, threshold=args.filter_ADC)
@@ -312,24 +322,25 @@ if __name__ == "__main__":
                                 if ch in valid_waveforms:
                                     valid_waveforms[ch].append(event[ch_key])
 
+                # Update progress bar
                 min_valid = min(len(valid_waveforms[ch]) for ch in selected_channels)
                 pbar.update(min_valid - pbar.n)
                 log_file.write(f"Run {run_count}: waveforms per channel = { {ch: len(valid_waveforms[ch]) for ch in selected_channels} }\n")
 
             print(f"\n✅ Done. At least {min_events} waveforms per channel acquired.")
 
+            # Save filtered waveforms per channel as compressed NPZ files
             for ch_key, waves in valid_waveforms.items():
                 ch_filename = f"{args.filename}_ch{ch_key}.npz"
                 ch_output_path = os.path.join(save_dir, ch_filename)
                 np.savez_compressed(ch_output_path, waveforms=np.array(waves))
                 print(f"🔸 Saved {len(waves)} waveforms for channel {ch_key} to {ch_output_path}")
 
-
-            # ⬇️ Plotting (tutti i canali o uno solo)
+            # Optional plotting of waveforms
             if args.plot:
                 plt.figure(figsize=(14, 8))
-                x_time = (np.arange(1024) / args.sampling * 1e3)  # ns
-                max_plot_waves = 1000
+                x_time = (np.arange(1024) / args.sampling * 1e3)  # time in ns
+                max_plot_waves = 20000
                 for ch in selected_channels:
                     waves = valid_waveforms[ch]
                     for i in range(min(len(waves), max_plot_waves)):
@@ -337,7 +348,6 @@ if __name__ == "__main__":
                 plt.title('Sample Waveforms per Channel')
                 plt.xlabel('Time [ns]')
                 plt.ylabel('Amplitude [ADC]')
-                plt.legend(fontsize='small', ncol=2)
                 plt.grid()
                 plt.tight_layout()
                 plt.show()
@@ -345,113 +355,3 @@ if __name__ == "__main__":
             print("Waveforms saved in per-channel .npz files.")
             pbar.close()
             close_acquisition(rwc)
-# # Uncomment the following lines to run the script directly
-
-
-
-# if __name__ == "__main__":
-#     if args.trg == 'NIM':
-#         # print("🔌 Starting NIM pulser...")
-#         print("NIM pulser should be already ON from the .sh script...")
-#         NIM_trg()
-#     elif args.trg == 'laser':
-#         print("🔌 Starting laser pulser...")
-#         laser_trg() 
-
-#     selected_channels = args.channel if args.channel else None
-#     print(f"Selected channels: {selected_channels}")
-
-#     min_events = args.min_events
-#     print(f"Accumulating at least {min_events} valid waveforms.")
-
-#     valid_waveforms = []
-#     run_count = 0
-
-#     with rwaveclient(HOST, PORT, verbose=True) as rwc:
-#         if rwc is None:
-#             sys.exit("❌ Failed to connect to the digitizer.")
-#         print("🔌 Configuring digitizer...")
-#         close_acquisition(rwc)
-            
-#         with open(args.log_file, 'w') as log_file:
-#             log_file.write(f"Acquisition started. Accumulating at least {min_events} waveforms.\n")
-#             log_file.write(f"Selected channels: {selected_channels}\n")
-
-#             pbar = tqdm(total=min_events, desc="Accumulating waveforms", ncols=100, unit="waveforms")
-
-#             configure_dgz(rwc, 0x0003, correction=True)
-            
-#             while len(valid_waveforms) < min_events:
-#                 run_count += 1
-#                 print(f"\nRun {run_count}: Accumulating waveforms... ({len(valid_waveforms)} / {min_events})")
-                
-#                 # Qui scegli la funzione in base al trigger: NIM O LASER -->NIM
-                
-#                 if args.trg == 'laser':
-#                     print("🔌 Starting laser acquisition with NIM trg...")
-#                     data = acquire_data_NIM(rwc)
-#                 elif args.trg == 'NIM':
-#                     data = acquire_data_NIM(rwc)
-#                 else:
-#                     data = acquire_data(0x0003, correction=True)
-                
-#                 if data is None:
-#                     sys.exit("❌ Acquisition failed.")
-
-#                 # print_trigger_tags(data, selected_ch=selected_channels)
-
-#                 event_data = handle_data(data, selected_ch=selected_channels, shift_waveforms=args.shift_waveforms)
-#                 if event_data is None:
-#                     sys.exit("❌ No events to process.")
-
-#                 if args.filter_ADC is not None:
-#                     print(f"🔍 Applying filter: peak-to-peak > {args.filter_ADC} ADC")
-#                     filtered = apply_filter(event_data, threshold=args.filter_ADC)
-
-#                     for ch_key, waveforms in filtered.items():
-#                         valid_waveforms.extend(waveforms)
-#                     print(f"Waveforms after filtering: {len(valid_waveforms)}")
-#                 else:
-#                     print("No filter applied. Saving all waveforms.")
-#                     for event in event_data:
-#                         for ch_key in event:
-#                             if ch_key.startswith("waveform_ch"):
-#                                 valid_waveforms.append(event[ch_key])
-
-#                 pbar.update(len(valid_waveforms) - pbar.n)
-#                 log_file.write(f"Run {run_count}: {len(valid_waveforms)} valid waveforms accumulated\n")
-
-            
-#             print(f"\n{len(valid_waveforms)} valid waveforms accumulated. Saving to NPZ.")
-            
-#             user_filename = args.filename
-#             if not user_filename.endswith(".npz"):
-#                 user_filename += ".npz"
-#             output_path = os.path.join(save_dir, user_filename)
-
-#             np.savez_compressed(output_path, waveforms=np.array(valid_waveforms))
-            
-#             #plotting option: plot N waveforms in the same canvas
-#             # with the correct conversion to ns depending on the sampling rate
-#             x_time = (np.arange(1024)/args.sampling * 1e3)  # ns
-#             if args.plot:
-#                 plt.figure(figsize=(12, 6))
-#                 for i in range(min(1000, len(valid_waveforms))):
-#                     plt.plot(x_time, valid_waveforms[i], label=f'Waveform {i+1}', alpha=0.5)
-#                 plt.title('Sample Waveforms')
-#                 plt.xlabel('Sample Index')
-#                 plt.ylabel('Amplitude (ADC)')
-#                 plt.legend()
-#                 plt.grid()
-#                 plt.show()
-        
-#             print(f"Waveforms saved in: {output_path}")
-#             pbar.close()
-#             close_acquisition(rwc)
-            
-            
-            
-
-        
-        
-        
