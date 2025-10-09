@@ -149,23 +149,37 @@ class Utils:
     @staticmethod
     def read_data_file(filepath, num_columns):
         with open(filepath, 'r') as f:
-            lines = f.readlines()
+            lines = [line.strip() for line in f if line.strip()]  # esclude righe vuote
 
-        try:
-            float(lines[1].split()[0])
-            header = [lines[0].strip()]
-            data = lines[1:]
-        except ValueError:
-            header = lines[:1]
-            data = lines[1:]
+        if not lines:
+            raise ValueError(f"File {filepath} è vuoto.")
+
+        header = []
+        data_start_idx = 0
+
+        # Cerca la prima riga che inizia con un numero (float)
+        for i, line in enumerate(lines):
+            first_token = line.split()[0]
+            try:
+                float(first_token)
+                data_start_idx = i
+                break
+            except ValueError:
+                header.append(line)
+
+        data_lines = lines[data_start_idx:]
+        if len(data_lines) == 0:
+            raise ValueError(f"Nessuna riga dati trovata in {filepath}")
 
         parsed_data = []
-        for line in data:
-            parts = line.strip().split()
+        for line in data_lines:
+            parts = line.split()
             if len(parts) != num_columns:
                 raise ValueError(f"Incompatible number of columns in {filepath}: expected {num_columns}, got {len(parts)}")
             parsed_data.append([float(x) for x in parts])
+
         return header, parsed_data
+
 
   
     @staticmethod
@@ -183,6 +197,14 @@ class Utils:
 
         for idx, file in enumerate(files):
             header, data = Utils.read_data_file(file, num_columns)
+
+            # Forza data a lista di liste anche se è una sola riga
+            if isinstance(data, np.ndarray):
+                if data.ndim == 1:
+                    data = [data.tolist()]
+                else:
+                    data = data.tolist()
+
             if header_saved is None:
                 header_saved = header
 
@@ -194,7 +216,6 @@ class Utils:
                         for col in sum_columns:
                             all_data[i][col] += row[col]
             else:
-                # Modalità accodamento
                 all_data.extend(data)
 
         with open(output_file, 'w') as f_out:

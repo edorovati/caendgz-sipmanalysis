@@ -33,38 +33,23 @@ class Filters:
         self.sampling_rate = sampling_rate
         self.nyquist = 0.5 * self.sampling_rate
 
-    # def lowpass(self, waveform: np.ndarray, cutoff_freq: float, order: int = 4) -> np.ndarray:
-    #     """
-    #     :param waveform: The waveform data to filter.
-    #     :param cutoff_freq: The cutoff frequency (in Hz) for the lowpass filter.
-    #     :param order: The order of the filter. Higher orders result in a steeper roll-off.
-    #     :return: The filtered waveform.
-    #     """
-    #     normal_cutoff = cutoff_freq / self.nyquist
-    #     b, a = butter(order, normal_cutoff, btype="low")
-    #     return filtfilt(b, a, waveform)
-    
-    @staticmethod
-    def lowpass_filter(wf, fs, cutoff_hz=200e6, order=4): # to be merged with the other lowpass function
+    def lowpass(self, waveform: np.ndarray, cutoff_freq: float, order: int = 4) -> np.ndarray:
         """
         Apply a low-pass Butterworth filter to reduce high-frequency noise.
-        
-        Parameters:
-        - wf: waveform array
-        - fs: sampling frequency in Hz
-        - cutoff_hz: cutoff frequency (default: 200 MHz)
-        - order: filter order (default: 4)
-        
-        Returns:
-        - filtered waveform array
+
+        :param waveform: The waveform data to filter.
+        :param cutoff_freq: The cutoff frequency (in Hz) for the lowpass filter.
+        :param order: The order of the filter. Higher orders result in a steeper roll-off.
+        :return: The filtered waveform.
         """
-        nyq = fs / 2.0
-        normal_cutoff = cutoff_hz / nyq
-        b, a = butter(order, normal_cutoff, btype='low', analog=False)
-        return filtfilt(b, a, wf)
+        normal_cutoff = cutoff_freq / self.nyquist
+        b, a = butter(order, normal_cutoff, btype="low")
+        return filtfilt(b, a, waveform)
 
     def highpass(self, waveform: np.ndarray, cutoff_freq: float, order: int = 4) -> np.ndarray:
         """
+        Apply a high-pass Butterworth filter to remove low-frequency components.
+
         :param waveform: The waveform data to filter.
         :param cutoff_freq: The cutoff frequency (in Hz) for the highpass filter.
         :param order: The order of the filter. Higher orders result in a steeper roll-off.
@@ -76,6 +61,8 @@ class Filters:
 
     def notch(self, waveform: np.ndarray, notch_freq: float, q_factor: float = 30) -> np.ndarray:
         """
+        Apply a notch (band-stop) filter to remove a specific frequency.
+
         :param waveform: The waveform data to filter.
         :param notch_freq: The frequency (in Hz) to be attenuated.
         :param q_factor: The quality factor (Q) determines the width of the notch. Higher values result in a narrower notch.

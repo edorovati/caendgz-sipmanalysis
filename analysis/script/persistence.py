@@ -32,30 +32,31 @@ if __name__ == "__main__":
 
     wf_data = Utils.load_waveforms(npz_path)
     info = Utils.get_info(npz_path)
+    waveforms = wf_data.get("waveforms", None)
 
-    # === Analyze waveforms ===
-    baseline_range = (49, 973)
-    waveforms, rising_edges = waveform_analysis.analyze_waveforms(
-        wf_data=wf_data,
-        fs=sampling,
-        baseline_range=baseline_range,
-        amplitude_threshold=amplitude_threshold,
-        max_waveforms=num_waveforms,
-        unit=unit,
-        get_edges=True
-    )
+    # # === Analyze waveforms ===
+    # baseline_range = (49, 973)
+    # waveforms, rising_edges = waveform_analysis.analyze_waveforms(
+    #     wf_data=wf_data,
+    #     fs=sampling,
+    #     baseline_range=baseline_range,
+    #     amplitude_threshold=amplitude_threshold,
+    #     max_waveforms=num_waveforms,
+    #     unit=unit,
+    #     get_edges=True
+    # )
 
-    if not waveforms:
-        print("⚠️ No waveforms passed the filter.")
-        exit()
+    # if not waveforms:
+    #     print("⚠️ No waveforms passed the filter.")
+    #     exit()
 
-    # === Alignment ===
-    if align and align != "False":
-        waveforms = waveform_analysis.align_waveforms(waveforms, rising_edges, mode=align)
+    # # === Alignment ===
+    # if align and align != "False":
+    #     waveforms = waveform_analysis.align_waveforms(waveforms, rising_edges, mode=align)
 
-    if not waveforms:
-        print("⚠️ No valid waveforms to plot.")
-        exit()
+    # if not waveforms:
+    #     print("⚠️ No valid waveforms to plot.")
+    #     exit()
 
     # === Plot ===
     plt.style.use('dark_background')

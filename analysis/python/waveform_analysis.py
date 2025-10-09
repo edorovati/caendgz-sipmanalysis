@@ -276,13 +276,40 @@ class waveform_analysis:
         else:
             return final_waveforms
 
+###########################
+# Amplitude analysis/distributions
+###########################
+    def amplitudes(waveforms, sampling=5000, output_filename=None):
+        """
+        Calcola le ampiezze di picco per una o più waveform.
+        
+        - waveforms: array 1D (una sola wf) o 2D (più wf)
+        - sampling: frequenza di campionamento in MHz (solo per messaggi)
+        - output_filename: se specificato, salva i risultati in un file .txt
+        
+        Restituisce un array di ampiezze di picco.
+        """
+        waveforms = np.asarray(waveforms)
+        if waveforms.ndim == 1:
+            waveforms = waveforms[np.newaxis, :]
 
+        peak_vals = np.max(waveforms, axis=1)
 
+        print(f"📊 Trovate {len(peak_vals)} waveform — Sampling: {sampling} MHz")
+        print(f"Ampiezze medie: {np.mean(peak_vals):.2f} mV | Mediana: {np.median(peak_vals):.2f} mV")
+
+        if output_filename:
+            os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+            np.savetxt(output_filename, peak_vals, fmt="%.6f")
+            print(f"✅ Ampiezze salvate in {output_filename}")
+
+        return peak_vals
+        
 
 ###########################
 # Persistence plot with waveform analysis
 ###########################
-    def persistence(self, npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100, #maybe none?
+    def persistence(self, npz_path, unit='mV', amplitude_threshold=4, num_waveforms=10000, #maybe none?
                 color='green', align="False", sampling=None, output_filename=None):
         wf_data = Utils.load_waveforms(npz_path)
         info = Utils.get_info(npz_path)
@@ -359,7 +386,7 @@ class waveform_analysis:
 # Store median waveform 
 ###########################
     @staticmethod
-    def store_avg(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100, align=False, sampling=None):
+    def store_avg(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=10000, align=False, sampling=None):
         wf_data = Utils.load_waveforms(npz_path)
         baseline_range = (49, 973)
 
@@ -441,13 +468,17 @@ class waveform_analysis:
 
         results = []
 
-        # Se è una sola waveform, rendila 2D con una sola riga
         if waveforms.ndim == 1:
             waveforms = waveforms[np.newaxis, :]
 
         for idx, wf in enumerate(waveforms):
             peak_idx = np.argmax(wf)
             peak_val = wf[peak_idx]
+
+            if peak_val < 4.0:
+                print(f"[{idx+1}] ⏭️  Scartata: picco troppo basso ({peak_val:.2f} mV)")
+                continue
+
             target_val = peak_val / np.e
             tau_ns = None
             tau_err_ns = None
@@ -478,9 +509,10 @@ class waveform_analysis:
 
         return results
 
+
     
     @staticmethod
-    def persistence_4_tau(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100,
+    def persistence_4_tau(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=10000,
                 color='green', align="False", sampling=None, output_filename=None):
         wf_data = Utils.load_waveforms(npz_path)
         info = Utils.get_info(npz_path)
@@ -552,7 +584,7 @@ class waveform_analysis:
 
 
     @staticmethod
-    def compare_waveforms(npz_paths, unit='mV', amplitude_threshold=4.0, num_waveforms=100, sampling=None):
+    def compare_waveforms(npz_paths, unit='mV', amplitude_threshold=4.0, num_waveforms=10000, sampling=None):
         """
         Confronta le waveform da più file .npz: selezione sopra soglia, allineamento e normalizzazione.
         Nessun effetto persistenza: solo overlay comparativo.
@@ -629,7 +661,7 @@ class waveform_analysis:
 # DECAY TIME WITH FIT
 ###########################
     @staticmethod
-    def decay_time(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=100,
+    def decay_time(npz_path, unit='mV', amplitude_threshold=4, num_waveforms=10000,
                 color='green', align="False", single_pe_filter=False, sampling=None,
                 fit_window=50, tail_sigma_cut=2.0, baseline_window=50):
 
@@ -717,6 +749,11 @@ class waveform_analysis:
 
             peak_idx = valid_peaks[0]
             peak_val = wf[peak_idx]
+
+            if peak_val < 4.0:
+                print(f"⏭️  Scartata: picco troppo basso ({peak_val:.2f} mV)")
+                continue
+
             print(f"✅ Picco valido: idx {peak_idx}, ampiezza = {peak_val:.3f} mV")
 
             tail = wf[peak_idx : peak_idx + fit_window]
@@ -739,6 +776,11 @@ class waveform_analysis:
                 A_fit, tau_fit, C_fit = popt
                 err = np.sqrt(np.diag(pcov))
 
+                # ✅ Controllo: fit sospetto se A troppo bassa o tau al limite
+                if A_fit <= 0.1 or tau_fit >= 199.0:
+                    print(f"⚠️ Fit non attendibile: A = {A_fit:.2f}, τ = {tau_fit:.2f}. Skip.")
+                    continue
+
                 print(f"✅ Fit: τ = {tau_fit:.2f}±{err[1]:.2f} ns, A = {A_fit:.2f}, C = {C_fit:.2f}")
 
                 taus.append(tau_fit)
@@ -753,6 +795,7 @@ class waveform_analysis:
                 print(f"❌ Fit fallito su picco indice {peak_idx}: {e}")
                 continue
 
+
         # Scrittura file
         if taus and txt_output:
             os.makedirs(os.path.dirname(txt_output), exist_ok=True)
@@ -766,3 +809,4 @@ class waveform_analysis:
             print("⚠️ Nessuna waveform fittata con successo.")
 
         return taus, tau_errors, amps, amp_errors, offsets, offset_errors, fitted_waveforms
+ 
