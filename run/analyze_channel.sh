@@ -1,100 +1,82 @@
 #!/bin/bash
-
 set -e
 
-# Parse input arguments
+# === ARGUMENT PARSING ===
+DO_TAU=false
+DO_DARK=false
+DO_LASER=false
+
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --filename)
-      FILENAME="$2"
-      shift 2
-      ;;
-    --vbias)
-      VBIAS="$2"
-      shift 2
-      ;;
-    --sampling)
-      SAMPLING="$2"
-      shift 2
-      ;;
-    --folder)
-      FOLDER="$2"
-      shift 2
-      ;;
-    --channel)
-      CHANNEL="$2"
-      shift 2
-      ;;
+    --filename) FILENAME="$2"; shift 2 ;;
+    --vbias) VBIAS="$2"; shift 2 ;;
+    --sampling) SAMPLING="$2"; shift 2 ;;
+    --folder) FOLDER="$2"; shift 2 ;;
+    --channel) CHANNEL="$2"; shift 2 ;;
+    --tau) DO_TAU=true; shift ;;
+    --dark) DO_DARK=true; shift ;;
+    --laser) DO_LASER=true; shift ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: $0 --filename <run-X> --vbias <voltage> --sampling <MHz> --folder <folder> --channel <channel>"
+      echo "Usage: $0 --filename <run-X> --vbias <voltage> --sampling <MHz> --folder <folder> --channel <channel> [--tau] [--dark] [--laser]"
       exit 1
       ;;
   esac
 done
 
-# Check mandatory arguments
-if [[ -z "$FILENAME" || -z "$VBIAS" || -z "$SAMPLING" || -z "$FOLDER" || -z "$CHANNEL" ]]; then
-  echo "Missing required arguments."
+# === CHECK REQUIRED ARGS ===
+for ARG_NAME in FILENAME VBIAS SAMPLING CHANNEL FOLDER; do
+    if [[ -z "${!ARG_NAME}" ]]; then
+        echo "❌ Missing required argument: --${ARG_NAME,,}"  # ,, trasforma in minuscolo
+        exit 1
+    fi
+done
+
+# === CHECK IF ANY ANALYSIS WAS SELECTED ===
+if ! $DO_TAU && ! $DO_DARK && ! $DO_LASER; then
+  echo "❌ No analysis selected. Please specify at least one of --tau, --dark, or --laser."
   exit 1
 fi
 
-# Construct file path
-INPUT_NPZ="../data/${FOLDER}/${FILENAME}_ch${CHANNEL}.npz"
+echo -e "\e[34m🌟 Starting analysis for $FILENAME | ch$CHANNEL\e[0m"
 
-# Output name base
-OUTBASE="../data/${FOLDER}/vbias_${VBIAS}_${FILENAME}_ch${CHANNEL}"
+# === RUN SELECTED ANALYSES IN PARALLELO ===
+if $DO_TAU; then
+  echo -e "\e[36m>>> TAU analysis\e[0m"
+  ./../plugins/analyze_tau.sh \
+    --filename "$FILENAME" \
+    --vbias "$VBIAS" \
+    --sampling "$SAMPLING" \
+    --folder "$FOLDER" \
+    --channel "$CHANNEL" &
+  pid_tau=$!
+fi
 
-echo "📈 Analyzing file: $INPUT_NPZ (ch $CHANNEL)"
+if $DO_DARK; then
+  echo -e "\e[36m>>> DARK analysis\e[0m"
+  ./../plugins/analyze_dark.sh \
+    --filename "$FILENAME" \
+    --vbias "$VBIAS" \
+    --sampling "$SAMPLING" \
+    --folder "$FOLDER" \
+    --channel "$CHANNEL" &
+  pid_dark=$!
+fi
 
-# === Median waveform ===
-echo -e "\e[32m>>> [${FILENAME} | ch${CHANNEL}] median_wf.py\e[0m"
-python ../analysis/script/median_wf.py "$INPUT_NPZ" \
-  --output "${OUTBASE}.npz" \
-  --amplitude_threshold 5.0 \
-  --unit mV \
-  --sampling "$SAMPLING" \
-  --save_npz &
-pid_median=$!
+if $DO_LASER; then
+  echo -e "\e[36m>>> LASER analysis\e[0m"
+  ./../plugins/analyze_laser.sh \
+    --filename "$FILENAME" \
+    --vbias "$VBIAS" \
+    --sampling "$SAMPLING" \
+    --folder "$FOLDER" \
+    --channel "$CHANNEL" &
+  pid_laser=$!
+fi
 
-wait $pid_median
+# === WAIT FOR ALL SELECTED ANALYSES ===
+[[ $DO_TAU == true ]] && wait $pid_tau
+[[ $DO_DARK == true ]] && wait $pid_dark
+[[ $DO_LASER == true ]] && wait $pid_laser
 
-# === Tau from filtered waveforms (direct) ===
-echo -e "\e[32m>>> [${FILENAME} | ch${CHANNEL}] tau_direct from filtered\e[0m"
-python ../analysis/script/tau_direct.py "${OUTBASE}_filtered.npz" \
-  --output "${OUTBASE}_tau_direct_all.txt" \
-  --sampling "$SAMPLING"
-
-# === Tau from median waveform (direct) ===
-echo -e "\e[32m>>> [${FILENAME} | ch${CHANNEL}] tau_direct from median\e[0m"
-python ../analysis/script/tau_direct.py "${OUTBASE}_median_wf.npz" \
-  --output "${OUTBASE}_tau_direct_median.txt" \
-  --sampling "$SAMPLING"
-
-# === Tau from filtered (fit) ===
-echo -e "\e[32m>>> [${FILENAME} | ch${CHANNEL}] tau_fit from filtered\e[0m"
-python ../analysis/script/tau_fit.py "${OUTBASE}_filtered.npz" \
-  --output "${OUTBASE}_tau_fit_all.txt" \
-  --sampling "$SAMPLING"
-
-# === Tau from median (fit) ===
-echo -e "\e[32m>>> [${FILENAME} | ch${CHANNEL}] tau_fit from median\e[0m"
-python ../analysis/script/tau_fit.py "${OUTBASE}_median_wf.npz" \
-  --output "${OUTBASE}_tau_fit_median.txt" \
-  --sampling "$SAMPLING"
-
-# === Get transitions ===
-echo -e "\e[32m>>> [${FILENAME} | ch${CHANNEL}] get_transitions.py\e[0m"
-python ../analysis/script/get_transitions.py \
-  --npz "$INPUT_NPZ" \
-  --output "${OUTBASE}.get_transitions.txt" \
-  --scanthr \
-  --range 0-50 \
-  --sign 1 \
-  --x_start 100 \
-  --x_end 987 &
-pid_get=$!
-
-wait $pid_get
-
-echo -e "\e[33m>>> [${FILENAME} | ch${CHANNEL}] analysis complete.\e[0m"
+echo -e "\e[32m✅ [${FILENAME} | ch${CHANNEL}] SELECTED ANALYSIS COMPLETE\e[0m"
