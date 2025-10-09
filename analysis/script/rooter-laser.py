@@ -1,0 +1,144 @@
+import os
+import sys
+import argparse
+import numpy as np
+import uproot
+from colorama import Fore, Style
+
+# Local imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'python')))
+from scanthr import ScanThreshold
+from filters import Filters
+from utils import Utils
+from waveform_analysis import waveform_analysis
+
+########################## === Argument Parsing === ##########################
+parser = argparse.ArgumentParser(
+    description="Laser-triggered waveform filtering and ROOT output",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    epilog="""
+Examples of usage:
+
+  1) Run with a laser threshold at 12.5 mV and save filtered output:
+     python script.py --laser laser.npz --ch1 ch1.npz --soglia_laser 12.5 --sampling 750 --lowpass 2e7 --output results.root
+
+  2) Run with only laser input, threshold 20 mV, notch filter at 50 Hz:
+     python script.py --laser laser.npz --soglia_laser 20 --sampling 1000 --notch 50 --output laser_only.root
+"""
+)
+
+parser.add_argument("--laser", required=True, help="Laser .npz waveform file path")
+for i in range(1, 17):
+    parser.add_argument(f"--ch{i}", help=f"Channel {i} .npz waveform file path")
+
+parser.add_argument("--soglia_laser", type=float, required=True, help="Threshold in mV for laser signal")
+parser.add_argument("--sign", type=int, choices=[-1, 1], default=1, help="Signal polarity (+1 or -1)")
+parser.add_argument("--lowpass", type=float, help="Lowpass filter cutoff frequency (Hz)")
+parser.add_argument("--highpass", type=float, help="Highpass filter cutoff frequency (Hz)")
+parser.add_argument("--notch", type=float, help="Notch filter frequency (Hz)")
+parser.add_argument("--sampling", type=float, required=True, help="Sampling rate in MHz (converted internally to Hz)")
+parser.add_argument("--output", required=True, help="Output ROOT file name")
+
+args = parser.parse_args()
+#################################################################################
+
+########################## === Data Loading === ##########################
+print("\n" + "="*80)
+print(Fore.CYAN + "Data Loading Section" + Style.RESET_ALL)
+print("="*80 + "\n")
+
+laser_adc = np.load(args.laser)['waveforms'].squeeze()
+n_waveforms = laser_adc.shape[0]
+
+channels = {}
+for i in range(1, 17):
+    ch_file = getattr(args, f"ch{i}")
+    if ch_file:
+        ch_data = np.load(ch_file)['waveforms'].squeeze()
+        channels[f"ch{i}"] = ch_data[:n_waveforms]
+
+print(Fore.GREEN + f"Loaded laser and {len(channels)} sensor channels. Total waveforms: {n_waveforms}" + Style.RESET_ALL)
+#################################################################################
+
+########################## === Initialize Tools === ##########################
+sampling_rate_hz = args.sampling * 1e6  # convert MHz → Hz
+scanner = ScanThreshold()
+filters = Filters(sampling_rate_hz)
+dt = 1.0 / sampling_rate_hz
+time_axis = np.arange(1024) * dt * 1e9  # ns
+#################################################################################
+
+########################## === Convert ADC → mV === ##########################
+laser_mv = np.array([Utils.adc_to_mv(wf) for wf in laser_adc])
+
+channels_mv = {}
+for ch_name, ch_adc in channels.items():
+    channels_mv[ch_name] = np.array([Utils.adc_to_mv(wf) for wf in ch_adc])
+#################################################################################
+
+########################## === Thresholding Laser === ##########################
+valid_indices = []
+for i in range(n_waveforms):
+    wf_laser = laser_mv[i]
+
+    # Apply filters to laser signal before thresholding
+    wf_corr = wf_laser
+    if args.lowpass:
+        wf_corr = filters.lowpass(wf_corr, args.lowpass)
+    if args.highpass:
+        wf_corr = filters.highpass(wf_corr, args.highpass)
+    if args.notch:
+        wf_corr = filters.notch(wf_corr, args.notch)
+
+    transitions = scanner.get_transitions(wf_corr, args.soglia_laser, args.sign)
+    if transitions:
+        valid_indices.append(i)
+
+print(Fore.YELLOW + f"\nValid laser events: {len(valid_indices)} / {n_waveforms}" + Style.RESET_ALL)
+print(Fore.RED + f"Rejected waveforms: {n_waveforms - len(valid_indices)}" + Style.RESET_ALL)
+#################################################################################
+
+########################## === Writing to ROOT === ##########################
+with uproot.recreate(args.output) as f:
+    # Save laser
+    time_data = []
+    amplitude_data = []
+    for idx in valid_indices:
+        wf = laser_mv[idx]
+        # Apply filters again consistently for saved waveforms
+        if args.lowpass:
+            wf = filters.lowpass(wf, args.lowpass)
+        if args.highpass:
+            wf = filters.highpass(wf, args.highpass)
+        if args.notch:
+            wf = filters.notch(wf, args.notch)
+        time_data.append(time_axis.tolist())
+        amplitude_data.append(wf.tolist())
+    f["laser"] = {
+        "time": time_data,
+        "amplitude": amplitude_data
+    }
+    print(Fore.CYAN + "Saved laser TTree" + Style.RESET_ALL)
+
+    # Save sensor channels
+    for ch_name, ch_data_mv in channels_mv.items():
+        time_data = []
+        amplitude_data = []
+        for idx in valid_indices:
+            wf = ch_data_mv[idx]
+            if args.lowpass:
+                wf = filters.lowpass(wf, args.lowpass)
+            if args.highpass:
+                wf = filters.highpass(wf, args.highpass)
+            if args.notch:
+                wf = filters.notch(wf, args.notch)
+            time_data.append(time_axis.tolist())
+            amplitude_data.append(wf.tolist())
+        f[ch_name] = {
+            "time": time_data,
+            "amplitude": amplitude_data
+        }
+        print(Fore.CYAN + f"Saved {ch_name} TTree" + Style.RESET_ALL)
+
+print(Fore.GREEN + f"\nFinished. Output saved to: {args.output}" + Style.RESET_ALL)
+#################################################################################

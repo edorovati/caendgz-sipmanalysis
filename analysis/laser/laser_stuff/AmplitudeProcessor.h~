@@ -1,0 +1,275 @@
+#ifndef AMPLITUDE_PROCESSOR_H
+#define AMPLITUDE_PROCESSOR_H
+
+#include <TString.h>
+#include <TTree.h>
+#include <TCanvas.h>
+#include <TGraph.h>
+#include <map>
+#include <utility>
+#include <algorithm>
+#include <cmath>
+#include <iostream>
+#include <utility>  // per std::pair
+
+#include "gauss_stuff.h"
+#include "/home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/root/utils.h"
+#include "home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/analysis/root/graphics.h"
+
+struct AmplitudeResults {
+    std::map<TString, Double_t*> baseline_medians_map;               // baseline per ogni evento
+    std::map<TString, Double_t*> corrected_waveforms_map;            // flattened: nentries × 1024
+};
+
+struct PeakResults {
+    std::map<TString, Double_t*> peak_amplitudes_map;  // [event] → ampiezza
+    std::map<TString, Double_t*> peak_positions_map;   // [event] → tempo (ns)
+    std::map<TString, TH1F*>     rms_hist_map;         // istogramma RMS per canale
+};
+
+inline AmplitudeResults compute_corrected_waveforms(
+    const std::map<TString, TTree*>& tree_map,
+    const std::map<TString, Double_t*>& time_map,
+    const std::map<TString, Double_t*>& amp_map,
+    const std::map<TString, std::pair<float, float>>& baseline_time_windows
+) {
+    AmplitudeResults results;
+
+    if (tree_map.empty()) {
+        std::cerr << "[compute_corrected_waveforms] No trees provided!" << std::endl;
+        return results;
+    }
+
+    const Long64_t nentries = tree_map.begin()->second->GetEntries();
+    const int nsamples = 1024;
+
+    for (const auto& [ch, tree] : tree_map) {
+        if (baseline_time_windows.find(ch) == baseline_time_windows.end()) {
+            std::cerr << "Warning: No baseline window for channel " << ch << std::endl;
+            continue;
+        }
+
+        double baseline_start = baseline_time_windows.at(ch).first;
+        double baseline_end   = baseline_time_windows.at(ch).second;
+
+        // Allocate flat arrays: nentries × nsamples
+        Double_t* corrected_waveforms = new Double_t[nentries * nsamples];
+        Double_t* baseline_medians = new Double_t[nentries];
+
+        for (Long64_t i = 0; i < nentries; ++i) {
+            tree->GetEntry(i);
+
+            std::vector<double> baseline_amps_pre;
+            for (int j = 0; j < nsamples; ++j) {
+                double t = time_map.at(ch)[j];
+                if (t >= baseline_start && t < baseline_end) {
+                    baseline_amps_pre.push_back(amp_map.at(ch)[j]);
+                }
+            }
+
+            if (baseline_amps_pre.empty()) {
+                baseline_medians[i] = std::numeric_limits<Double_t>::quiet_NaN();
+                for (int j = 0; j < nsamples; ++j)
+                    corrected_waveforms[i * nsamples + j] = std::numeric_limits<Double_t>::quiet_NaN();
+                continue;
+            }
+
+            // Calcolo mediana pre-correzione
+            std::sort(baseline_amps_pre.begin(), baseline_amps_pre.end());
+            size_t n_pre = baseline_amps_pre.size();
+            double median_pre = (n_pre % 2 == 1)
+                ? baseline_amps_pre[n_pre / 2]
+                : 0.5 * (baseline_amps_pre[n_pre / 2 - 1] + baseline_amps_pre[n_pre / 2]);
+
+            // Correggo waveform
+            for (int j = 0; j < nsamples; ++j) {
+                corrected_waveforms[i * nsamples + j] = amp_map.at(ch)[j] - median_pre;
+            }
+        }
+
+        results.corrected_waveforms_map[ch] = corrected_waveforms;
+        results.baseline_medians_map[ch] = baseline_medians;
+    }
+
+    return results;
+}
+
+
+
+// -----------------------------------------------------------------------------
+//  Costruisce e disegna istogrammi di ampiezze con:
+//  - range fisso: [0, 80] mV
+//  - binning fisso: 0.2 mV (400 bin)
+//  - fit automatico con numero stimato di picchi
+// -----------------------------------------------------------------------------
+
+inline std::pair<TH1F*, TF1*> amplitude_histo(
+    const Double_t* amps_array,
+    TTree* tree,
+    const TString& ch,
+    int color = kBlue + 2
+) {
+    const int nbins = 320;
+    const double xmin = 0.0;
+    const double xmax = 80.0;
+
+    if (!amps_array || !tree) return {nullptr, nullptr};
+
+    const Long64_t nentries = tree->GetEntries();
+
+    std::vector<double> amps_vec;
+    amps_vec.reserve(nentries);
+
+    for (Long64_t i = 0; i < nentries; ++i) {
+        if (!std::isnan(amps_array[i]))
+            amps_vec.push_back(amps_array[i]);
+    }
+
+    if (amps_vec.empty()) return {nullptr, nullptr};
+
+    TH1F* h_amp = new TH1F(Form("amplitude_%s", ch.Data()), Form("Amplitude %s;Amplitude (mV);Entries", ch.Data()),nbins, xmin, xmax);
+    h_amp->SetDirectory(nullptr);
+
+    for (double a : amps_vec) h_amp->Fill(a);
+    for (int b = 1; b <= h_amp->GetNbinsX(); ++b)
+        h_amp->SetBinError(b, std::sqrt(h_amp->GetBinContent(b)));
+
+    TF1* multi = GaussStuff::build_multi_gauss_fit_alternative(h_amp);
+    if (multi) multi->SetLineColor(color);
+
+    return {h_amp, multi};
+}
+
+inline PeakResults compute_peak_info(
+    const std::map<TString, Double_t*>& corrected_waveforms_map,
+    const std::map<TString, TTree*>&    tree_map,
+    const std::map<TString, Double_t*>& time_map,
+    const std::map<TString, Double_t*>& baseline_medians_map,
+    const std::map<TString, std::pair<float, float>>& baseline_time_windows)
+{
+    PeakResults out;
+    const int nsamples = 1024;
+
+    for (const auto& [ch, wf_array] : corrected_waveforms_map) {
+
+        if (tree_map.count(ch)==0 || baseline_time_windows.count(ch)==0) {
+            std::cerr << "Warning: missing data for channel " << ch << std::endl;
+            continue;
+        }
+
+        const double base_start = baseline_time_windows.at(ch).first;
+        const double base_end   = baseline_time_windows.at(ch).second;
+
+        Long64_t nentries = tree_map.at(ch)->GetEntries();
+        Double_t* peak_amp = new Double_t[nentries];
+        Double_t* peak_pos = new Double_t[nentries];
+        std::vector<double> rms_vals; rms_vals.reserve(nentries);
+
+        for (Long64_t i=0;i<nentries;++i) {
+            /* ------------ RMS su baseline ---------------- */
+            std::vector<double> noise;
+            for (int j=0;j<nsamples;++j){
+                double t=time_map.at(ch)[j];
+                if (t>=base_start && t<base_end)
+                    noise.push_back(wf_array[i*nsamples+j]);
+            }
+            double rms=0;
+            if(!noise.empty()){
+                double s2=0; for(double v:noise) s2+=v*v;
+                rms=std::sqrt(s2/noise.size());
+            }
+            rms_vals.push_back(rms);
+
+            /* ------------ picco (Utils) ------------------ */
+            double pk = Utils::find_signal_peak_anywhere(&wf_array[i*nsamples], &time_map.at(ch)[0], nsamples,baseline_medians_map.at(ch)[i],rms);
+
+            /* trovo indice del massimo (per la posizione) */
+            int idx_max=-1;
+            if(!std::isnan(pk)){
+                for(int j=0;j<nsamples;++j)
+                    if (wf_array[i*nsamples+j]==pk){ idx_max=j; break;}
+            }
+            peak_amp[i]=pk;
+            peak_pos[i]=(idx_max>=0)? time_map.at(ch)[idx_max]
+                                    : std::numeric_limits<Double_t>::quiet_NaN();
+        }
+
+        /* -------- istogramma RMS per canale ------------ */
+        TH1F* h_rms=new TH1F(Form("rms_%s",ch.Data()),Form("Baseline RMS %s;RMS (mV);Entries",ch.Data()),
+                             250,0,5);
+        h_rms->SetDirectory(nullptr);
+        for (double r : rms_vals) {
+            h_rms->Fill(r);
+        }
+
+        // Imposta manualmente l'errore come radice del conteggio
+        for (int bin = 1; bin <= h_rms->GetNbinsX(); ++bin) {
+            double content = h_rms->GetBinContent(bin);
+            h_rms->SetBinError(bin, std::sqrt(content));
+        }
+        out.peak_amplitudes_map[ch]=peak_amp;
+        out.peak_positions_map[ch]=peak_pos;
+        out.rms_hist_map[ch]=h_rms;
+    }
+    return out;
+}
+
+inline std::pair<TGraphErrors*, TF1*> linear_fit_correction(
+    const std::map<TString, std::pair<TH1F*, TF1*>>& amp_dist)
+{
+    int total_points = 0;
+
+    // Conta il numero totale di punti
+    for (const auto& [ch, hist_fit_pair] : amp_dist) {
+        TF1* fit = hist_fit_pair.second;
+        if (!fit) continue;
+
+        int n_gauss = fit->GetNpar() / 3;
+        if (n_gauss < 1) continue;
+
+        total_points += n_gauss;
+    }
+
+    if (total_points == 0) {
+        std::cerr << "[build_fit_graph_from_amp_dist] Nessun punto trovato per il grafico." << std::endl;
+        return {nullptr, nullptr};
+    }
+
+    TGraphErrors* graph = new TGraphErrors(total_points);
+    graph->SetTitle("Amplitude mean vs Number of points;# photo-electrons; amplitude (mV)");
+    graph->SetMarkerStyle(47);
+    graph->SetMarkerSize(1);
+    graph->SetLineWidth(2);
+
+    int point_idx = 0;
+    int x_index = 1; // Indice progressivo da 1 in poi
+
+    for (const auto& [ch, hist_fit_pair] : amp_dist) {
+        TF1* fit = hist_fit_pair.second;
+        if (!fit) continue;
+
+        int n_gauss = fit->GetNpar() / 3;
+        if (n_gauss < 1) continue;
+
+        for (int k = 0; k < n_gauss; ++k) {
+            double mean = fit->GetParameter(3 * k + 1);
+            double mean_err = fit->GetParError(3 * k + 1);
+
+            graph->SetPoint(point_idx, x_index, mean);
+            graph->SetPointError(point_idx, 0, mean_err);
+
+            ++point_idx;
+            ++x_index;
+        }
+    }
+
+    // Definisci range x per il fit con un piccolo margine
+    double xmax = x_index + 1;
+
+    TF1* linear_fit = new TF1("linear_fit", "[0]*x + [1]", 0, xmax);
+    linear_fit->SetNpx(1000);
+    graph->Fit(linear_fit, "Q");  // Q = quiet, senza output
+
+    return {graph, linear_fit};
+}
+#endif // AMPLITUDE_PROCESSOR_H
