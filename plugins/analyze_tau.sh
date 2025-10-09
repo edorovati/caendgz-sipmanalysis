@@ -13,15 +13,53 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# === CHECK ARGS ===
-if [[ -z "$FILENAME" || -z "$VBIAS" || -z "$SAMPLING" || -z "$FOLDER" || -z "$CHANNEL" ]]; then
-  echo "Missing required arguments."; exit 1
+
+# === CHECK REQUIRED ARGS IN ONE LOOP ===
+for ARG_NAME in FILENAME VBIAS SAMPLING CHANNEL FOLDER; do
+    if [[ -z "${!ARG_NAME}" ]]; then
+        echo "❌ Missing required argument: --${ARG_NAME,,}"  # ,, trasforma in minuscolo
+        exit 1
+    fi
+done
+
+
+# === NORMALIZE FILENAME ===
+BASENAME=$(basename "$FILENAME" .npz)
+
+# --- Input path handling ---
+if [[ "$BASENAME" == *_ch* ]]; then
+    INPUT_NPZ="$FILENAME"
+    [[ "$INPUT_NPZ" != *.npz ]] && INPUT_NPZ="${INPUT_NPZ}.npz"
+else
+    if [[ "$FILENAME" == *"/"* ]]; then
+        INPUT_NPZ="${FILENAME}_ch${CHANNEL}.npz"
+    else
+        if [[ -n "$FOLDER" ]]; then
+            INPUT_NPZ="${FOLDER%/}/${BASENAME}_ch${CHANNEL}.npz"
+        else
+            INPUT_NPZ="./${BASENAME}_ch${CHANNEL}.npz"
+        fi
+    fi
 fi
 
-INPUT_NPZ="../data/${FOLDER}/${FILENAME}_ch${CHANNEL}.npz"
-OUTBASE="../data/${FOLDER}/vbias_${VBIAS}_${FILENAME}_ch${CHANNEL}"
+# --- Output directory ---
+if [[ -n "$FOLDER" ]]; then
+    OUTDIR="${FOLDER%/}"  # remove trailing slash
+else
+    OUTDIR=$(dirname "$INPUT_NPZ")
+fi
+mkdir -p "$OUTDIR"
 
+# --- OUTBASE handling ---
+if [[ "$BASENAME" == *_ch* ]]; then
+    OUTBASE="${OUTDIR}/vbias_${VBIAS}_${BASENAME}"
+else
+    OUTBASE="${OUTDIR}/vbias_${VBIAS}_${BASENAME}_ch${CHANNEL}"
+fi
+
+echo "🌟 Starting TAU analysis"
 echo "📈 TAU analysis on: $INPUT_NPZ (ch $CHANNEL)"
+echo "Output base: $OUTBASE"
 
 # === Median waveform ===
 echo -e "\e[32m>>> median_wf.py\e[0m"
