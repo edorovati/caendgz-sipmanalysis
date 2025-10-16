@@ -1,125 +1,164 @@
 #!/bin/bash
+set -e
+set -u
 
-# Default values
+# === DEFAULTS ===
 N_RUNS=""
 VBIAS=""
 SAMPLING=""
 FOLDER=""
-CHANNELS=()  # canali da analizzare
+CHANNELS=()
+DO_TAU=false
+DO_DARK=false
+DO_LASER=false
 host="aimtti-plh120p-00"
 port=9221
+N_WAVES=2000
 
-N_WAVES=10000
-DELETE_NPZ=true
-
-# Parse input arguments
+# === ARGUMENT PARSING ===
 while [[ $# -gt 0 ]]; do
-  case $1 in
-    --n_runs)
-      N_RUNS="$2"
-      shift 2
-      ;;
-    --vbias)
-      VBIAS="$2"
-      shift 2
-      ;;
-    --sampling)
-      SAMPLING="$2"
-      shift 2
-      ;;
-    --folder)
-      FOLDER="$2"
-      shift 2
-      ;;
-    --channels)
-      shift
-      echo "📥 Parsing channels..."
-      while [[ $# -gt 0 && $1 != --* ]]; do
-        echo "  ➕ Aggiungo canale: $1"
-        CHANNELS+=("$1")
-        shift
-      done
-      ;;
-    *)
-      echo "Unknown option: $1"
-      echo "Usage: $0 --n_runs <number> --vbias <voltage> --sampling <rate> --folder <foldername> [--channels 1 2 3 ...]"
-      exit 1
-      ;;
-  esac
+	case $1 in
+		--n_runs) N_RUNS="$2"; shift 2 ;;
+		--vbias) VBIAS="$2"; shift 2 ;;
+		--sampling) SAMPLING="$2"; shift 2 ;;
+		--folder) FOLDER="$2"; shift 2 ;;
+		--channels)
+			shift
+			echo "📥 Parsing channels..."
+			while [[ $# -gt 0 && $1 != --* ]]; do
+				echo "  ➕ Aggiungo canale: $1"
+				CHANNELS+=("$1")
+				shift
+			done
+			;;
+		--tau) DO_TAU=true; shift ;;
+		--dark) DO_DARK=true; shift ;;
+		--laser) DO_LASER=true; shift ;;
+		*)
+			echo "❌ Unknown option: $1"
+			echo "Usage: $0 --n_runs <N> --vbias <V> --sampling <rate> --folder <dir> --channels <list> [--tau|--dark|--laser]"
+			exit 1 ;;
+	esac
 done
 
-# Check required arguments
-if [[ -z "$N_RUNS" || -z "$VBIAS" || -z "$SAMPLING" || -z "$FOLDER" ]]; then
-  echo "Error: --n_runs, --vbias, --sampling and --folder are required."
-  exit 1
+# === CHECK ARGOMENTI OBBLIGATORI ===
+missing=()
+[[ -z "$N_RUNS" ]] && missing+=("--n_runs")
+[[ -z "$VBIAS" ]] && missing+=("--vbias")
+[[ -z "$SAMPLING" ]] && missing+=("--sampling")
+[[ -z "$FOLDER" ]] && missing+=("--folder")
+[[ ${#CHANNELS[@]} -eq 0 ]] && missing+=("--channels")
+
+if (( ${#missing[@]} )); then
+	echo "❌ Missing required argument(s): ${missing[*]}"
+	echo "Usage: $0 --n_runs <N> --vbias <V> --sampling <rate> --folder <dir> --channels <list> [--tau|--dark|--laser]"
+	exit 1
 fi
 
-# Powering on the bias
-echo "Setting V1 to $VBIAS V..."
-echo "V1 $VBIAS" | nc -w1 -W1 "$host" "$port"
-echo "Switching output ON..."
-echo "OP1 1" | nc -w1 -W1 "$host" "$port"
-sleep 10
-echo "Output is ON and V1 is set to $VBIAS V."
+# === VALIDAZIONE INPUT ===
+if ! [[ "$N_RUNS" =~ ^[0-9]+$ ]]; then
+	echo "❌ --n_runs deve essere un numero intero positivo"
+	exit 1
+fi
+if ! [[ "$VBIAS" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+	echo "❌ --vbias deve essere un numero (es. 10 o 10.5)"
+	exit 1
+fi
+if ! [[ "$SAMPLING" =~ ^[0-9]+$ ]]; then
+	echo "❌ --sampling deve essere un numero intero positivo"
+	exit 1
+fi
 
-# === RUN LOOP ===
+# === NORMALIZZA PERCORSI ===
+FOLDER="${FOLDER%/}"  # rimuove eventuale slash finale
+TARGET_DIR="${FOLDER}/vbias_${VBIAS}"
+echo "📁 Output folder: $TARGET_DIR"
+mkdir -p "$TARGET_DIR/logs" || { echo "❌ Errore nella creazione di $TARGET_DIR/logs"; exit 1; }
+
+# === TRAP PER CLEANUP ===
+cleanup() {
+	echo "❌ Script interrotto, cleanup in corso..."
+	# Aggiungi qui comandi di cleanup (es. spegnere bias se attivo)
+}
+trap cleanup EXIT
+
+# === LOOP DEI RUN ===
 for ((i=0; i<N_RUNS; i++)); do
-  FILENAME="run-$i"
-  echo ">>> Starting acquisition $i with filename: $FILENAME"
+	FILENAME="run-$i"
+	echo -e "\e[36m>>> Starting acquisition $i with filename: $FILENAME\e[0m"
 
-  SECONDS=0
+	SECONDS=0
 
-  echo -e "\n🐞 DEBUG: Chiamo run_dgz.py con:"
-  echo -n "python run_dgz.py "
-  echo -n "--vbias $VBIAS "
-  echo -n "--filter_ADC 0 "
-  echo -n "--filename $FILENAME "
-  echo -n "--sampling $SAMPLING "
-  echo -n "--trg laser "
-  echo -n "--channel 0 ${CHANNELS[*]} "
-  echo -n "--folder $FOLDER "
-  echo -n "--min_events $N_WAVES"
-  echo -e "\n"
+	# === ACQUISIZIONE DGZ ===
+	echo -e "\e[1m**Lancio run_dgz.py con argomenti:** --vbias \"$VBIAS\" --filter_ADC 0 --filename \"$FILENAME\" --sampling \"$SAMPLING\" --trg NIM --channel 0 ${CHANNELS[*]} --folder \"$FOLDER\" --min_events \"$N_WAVES\"\e[0m"
+	python run_dgz.py \
+		--vbias "$VBIAS" \
+		--filter_ADC 0 \
+		--filename "$FILENAME" \
+		--sampling "$SAMPLING" \
+		--trg NIM \
+		--channel 0 "${CHANNELS[@]}" \
+		--folder "$FOLDER" \
+		--min_events "$N_WAVES" || {
+		echo -e "\e[31m❌ Errore in run_dgz.py per run $i, esco\e[0m"
+		exit 1
+	}
 
-  python run_dgz.py \
-    --vbias "$VBIAS" \
-    --filter_ADC 0 \
-    --filename "$FILENAME" \
-    --sampling "$SAMPLING" \
-    --trg laser \
-    --channel 0 "${CHANNELS[@]}" \
-    --folder "$FOLDER" \
-    --min_events "$N_WAVES"
+	# === LOOP SU CANALI ===
+	pids=()
+	for CH in "${CHANNELS[@]}"; do
+		LOGFILE="${TARGET_DIR}/logs/run-${i}_ch${CH}.log"
+		touch "$LOGFILE" || { echo "❌ Errore nella creazione di $LOGFILE"; exit 1; }
+		echo -e "\e[32m>>> [RUN $i | ch$CH] Starting analysis (log: $LOGFILE)\e[0m"
 
-  echo ">>> Acquisition $i completed."
+		FULL_FILENAME="${FOLDER}/${FILENAME}_ch${CH}.npz"
+		# Verifica che il file esista
+		if [[ ! -f "$FULL_FILENAME" ]]; then
+			echo -e "\e[31m❌ File $FULL_FILENAME non trovato, salto analisi per canale $CH\e[0m"
+			continue
+		fi
+		args=("--filename" "$FULL_FILENAME" "--vbias" "$VBIAS" "--sampling" "$SAMPLING" "--folder" "$FOLDER" "--channel" "$CH")
+		$DO_TAU   && args+=("--tau")
+		$DO_DARK  && args+=("--dark")
+		$DO_LASER && args+=("--laser")
 
-  sleep 5
+		# Stampa argomenti per analyze_channel.sh
+		args_str=$(printf "%q " "${args[@]}")
+		echo -e "\e[1m**Lancio analyze_channel.sh con argomenti:** $args_str\e[0m"
 
-  # # === LOOP SU CANALI (tranne 0) ===
-  # for CH in "${CHANNELS[@]}"; do
-  #   echo -e "\e[32m>>> [RUN $i | ch$CH] Analisi in corso...\e[0m"
-  #   ./analyze_channel.sh \
-  #     --filename "$FILENAME" \
-  #     --vbias "$VBIAS" \
-  #     --sampling "$SAMPLING" \
-  #     --folder "$FOLDER" \
-  #     --channel "$CH" &
-  #   pids+=($!)
-  # done
+		# Esegui analyze_channel.sh con quoting migliorato
+		bash -c "./analyze_channel.sh $(printf "%q " "${args[@]}")" > "$LOGFILE" 2>&1 &
 
-  # # Aspetta tutte le analisi del run
-  # for pid in "${pids[@]}"; do
-  #   wait $pid
-  # done
-  # unset pids
+		pids+=($!)
+	done
 
-  duration=$SECONDS
-  echo ">>> Time taken for run $i: $((duration / 60)) min $((duration % 60)) sec"
-  echo ">>> Run $i completed."
+	# === WAIT e controllo errori ===
+	echo "⏳ Waiting for analyses of run $i..."
+	for idx in "${!pids[@]}"; do
+		pid=${pids[$idx]}
+		CH=${CHANNELS[$idx]}
+		LOGFILE="${TARGET_DIR}/logs/run-${i}_ch${CH}.log"
+		if ! wait "$pid"; then
+			echo -e "\e[31m❌ ERROR detected in run $i, channel $CH. Check log: $LOGFILE\e[0m"
+			grep '❌' "$LOGFILE" | while read -r line; do
+				echo -e "\e[31m  $line\e[0m"
+			done
+		else
+			echo -e "\e[32m✅ Analysis for run $i, channel $CH completed successfully\e[0m"
+		fi
+	done
+	unset pids
 
+	duration=$SECONDS
+	echo -e "\e[35m>>> Run $i completed in $((duration / 60))m $((duration % 60))s\e[0m"
 done
 
-# === Power OFF ===
-echo "Switching output OFF..."
-echo "OP1 0" | nc -w1 -W1 "$host" "$port"
-echo "✅ Output is OFF. All runs completed."
+# # === SPOSTA FILE NPZ ===
+echo "📦 Spostando i file .npz..."
+for file in "${FOLDER}"/run-*_*ch*.npz; do
+	[[ -f "$file" ]] && mv "$file" "$TARGET_DIR/" || echo "⚠️ Nessun file .npz trovato in ${FOLDER}"
+done
+echo "✅ Tutti i file .npz spostati in $TARGET_DIR"
+
+# === RIMUOVI TRAP ===
+trap - EXIT
