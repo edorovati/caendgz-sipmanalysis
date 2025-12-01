@@ -63,6 +63,7 @@ if $DO_DARK; then
   pid_dark=$!
 fi
 
+#STILL TO BE IMPLEMENTED PROPERLY, just a SAMPLE/PLACEHOLDER
 if $DO_LASER; then
   echo -e "\e[36m>>> LASER analysis\e[0m"
   ./../plugins/analyze_laser.sh \

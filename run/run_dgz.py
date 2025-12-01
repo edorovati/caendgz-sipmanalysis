@@ -29,7 +29,7 @@ parser.add_argument("--vbias", type=float, required=True,
     help="Bias voltage applied to the SiPM (in volts, e.g., 35)")
 parser.add_argument("--folder", type=str, default=None,
                     help="Optional subfolder in /data where to save output files.")
-parser.add_argument('--trg', choices=['NIM', 'laser', 'sw'], default='sw', help="Trigger type: 'NIM' 'laser' (with NIM) or 'sw'")
+parser.add_argument('--trg', choices=['NIM', 'sw'], default='sw', help="Trigger type: 'NIM' 'laser' (with NIM) or 'sw'")
 parser.add_argument("--shift_waveforms", action="store_true", help="Shift waveforms by first_cell modulo 1024")
 parser.add_argument('--filename', type=str, default='output_data.npz',
                     help='Name of the .npz file to save (default: output_data.npz)')
@@ -82,7 +82,7 @@ def laser_trg():
     subprocess.run("/eu/aimtti/aimtti-cmd.py --address aimtti-tgp3152-00 --list /home/eic/RICCARDO/caen-DT5742/caendgz-sipmanalysis/configs/laser_trg.conf", shell=True, check=True)
     return True
 
-def acquire_data(chmask, correction):
+def acquire_data_sw(chmask, correction):
     """Acquire waveform data from the digitizer."""
     with rwaveclient(HOST, PORT, verbose=True) as rwc:
         if rwc is None:
@@ -112,11 +112,6 @@ def configure_dgz(rwc,chmask, correction):
 
 def acquire_data_NIM(rwc):
     """Acquire waveform data from the digitizer."""
-
-    # rwc.send_cmd(f'sampling {int(args.sampling)}')
-    # rwc.send_cmd('grmask 0x1')
-    # rwc.send_cmd(f'chmask {chmask}')
-    # rwc.send_cmd('correction on' if correction else 'correction off')
       
     rwc.send_cmd("start")
         
@@ -149,19 +144,19 @@ def handle_data(data, selected_ch=None, shift_waveforms=False):
         active_channels = range(max_channels)
 
     for event_number, event in enumerate(data):
-        first_cell = event[0]["first_cell"] % 1024 if shift_waveforms else 0
+    #     first_cell = event[0]["first_cell"] % 1024 if shift_waveforms else 0
         
         for ch in active_channels:
             waveform = event[ch]["waveform"]
-            if shift_waveforms:
-                waveform = np.roll(waveform, -first_cell)
+            # if shift_waveforms:
+            #     waveform = np.roll(waveform, -first_cell)
             
             tree_data = {
                 "event_number": np.array([event_number]),
                 f'waveform_ch{ch}': np.array([waveform]),
-                "trigger_tag": np.array([event[0]["trigger_tag"]]),
-                "first_cell": np.array([event[0]["first_cell"]]),
-                "num_cells": np.array([np.arange(len(waveform))])
+                # "trigger_tag": np.array([event[0]["trigger_tag"]]),
+                # "first_cell": np.array([event[0]["first_cell"]]),
+                # "num_cells": np.array([np.arange(len(waveform))])
             }
             all_events_data.append(tree_data)
 
@@ -209,38 +204,38 @@ def save_waveforms_to_root(filtered_dict, output_file):
                 file[f"{TREE_NAME}_event_{i}"] = {
                     "event_number": np.array([i]),
                     f"waveform_ch{ch}": np.array([wf]),
-                    "trigger_tag": np.array([0]),
-                    "first_cell": np.array([0]),
-                    "num_cells": np.array([np.arange(len(wf))])
+                    # "trigger_tag": np.array([0]),
+                    # "first_cell": np.array([0]),
+                    # "num_cells": np.array([np.arange(len(wf))])
                 }
         print(f"ROOT file saved: ch{ch}_{output_file}")
 
 
-def print_trigger_tags(data, selected_ch=None):
-    """Print the trigger tags for each waveform."""
-    if data is None:
-        print("No data received.")
-        return
+# def print_trigger_tags(data, selected_ch=None):
+#     """Print the trigger tags for each waveform."""
+#     if data is None:
+#         print("No data received.")
+#         return
 
-    max_channels = len(data[0])
+#     max_channels = len(data[0])
 
-    if selected_ch is not None:
-        active_channels = selected_ch
-    else:
-        active_channels = range(max_channels)
+#     if selected_ch is not None:
+#         active_channels = selected_ch
+#     else:
+#         active_channels = range(max_channels)
 
-    for event_number, event in enumerate(data):
-        for ch in active_channels:
-            trigger_tag = event[0]["trigger_tag"]
-            print(f"Event {event_number}, Channel {ch}: Trigger Tag = {trigger_tag}")
+#     for event_number, event in enumerate(data):
+#         for ch in active_channels:
+#             trigger_tag = event[0]["trigger_tag"]
+#             print(f"Event {event_number}, Channel {ch}: Trigger Tag = {trigger_tag}")
 
 if __name__ == "__main__":
-    if args.trg == 'NIM':
-        print("NIM pulser should be already ON from the .sh script...")
-        NIM_trg()
-    elif args.trg == 'laser':
-        print("Starting laser pulser...")
-        laser_trg()
+    # if args.trg == 'NIM':
+    #     print("NIM pulser should be already ON from the .sh script...")
+    #     NIM_trg()
+    # elif args.trg == 'laser':
+    #     print("Starting laser pulser...")
+    #     laser_trg()
 
     # Print selected channels
     selected_channels = args.channel if args.channel else []
@@ -289,13 +284,12 @@ if __name__ == "__main__":
                 print(f"\nRun {run_count}: Accumulating... (min={min_valid} / {min_events})")
 
                 # Acquire data depending on trigger type
-                if args.trg == 'laser':
-                    print("🔌 Starting laser acquisition with NIM trigger...")
-                    data = acquire_data_NIM(rwc)
-                elif args.trg == 'NIM':
+                if args.trg == 'NIM':
+                    print("🔌 Starting acquisition with NIM trigger...")
                     data = acquire_data_NIM(rwc)
                 else:
-                    data = acquire_data(chmask, correction=True)
+                    print("🔌 Starting acquisition with software trigger...")
+                    data = acquire_data_sw(chmask, correction=True)
 
                 if data is None:
                     sys.exit("❌ Acquisition failed.")
