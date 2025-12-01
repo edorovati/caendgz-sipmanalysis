@@ -1,22 +1,28 @@
 #!/bin/bash
-# Script per controllare l'alimentatore Aim-TTi PLH120-P tramite TCP/IP
+# Script per controllare Aim-TTi PLH120-P via TCP/IP
 
 host="aimtti-plh120p-00"
 port=9221
 
 usage() {
-    echo "Usage: $0 --vbias <value> [--on | --off]"
-    echo "  --vbias   Valore della tensione di bias (in Volt)"
-    echo "  --on      Accende l'uscita (OP1 1)"
-    echo "  --off     Spegne l'uscita (OP1 0)"
+    echo "Usage:"
+    echo "  $0 --vbias <V> [--on | --off]"
+    echo "  $0 --read"
+    echo ""
+    echo "Options:"
+    echo "  --vbias <V>   imposta la tensione in Volt"
+    echo "  --on          accende l'uscita"
+    echo "  --off         spegne l'uscita"
+    echo "  --read        legge tensione, corrente e stato"
     exit 1
 }
 
-# Parse argomenti
-if [[ $# -lt 2 ]]; then
+# Nessun argomento
+if [[ $# -lt 1 ]]; then
     usage
 fi
 
+# Parsing argomenti
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --vbias)
@@ -31,34 +37,57 @@ while [[ $# -gt 0 ]]; do
             ACTION="off"
             shift
             ;;
+        --read)
+            ACTION="read"
+            shift
+            ;;
         *)
             usage
             ;;
     esac
 done
 
-# Controllo argomenti obbligatori
+# Lettura stato
+if [[ "$ACTION" == "read" ]]; then
+    echo "📟 Lettura stato alimentatore..."
+    echo -n "Tensione impostata: "
+    echo "V1?" | nc -w1 -W1 "$host" "$port"
+    echo -n "Tensione erogata:   "
+    echo "V1O?" | nc -w1 -W1 "$host" "$port"
+    echo -n "Corrente erogata:   "
+    echo "I1O?" | nc -w1 -W1 "$host" "$port"
+    echo -n "Uscita:             "
+    STATE=$(echo "OP1?" | nc -w1 -W1 "$host" "$port")
+    if [[ "$STATE" == "1" ]]; then
+        echo "ON"
+    else
+        echo "OFF"
+    fi
+    exit 0
+fi
+
+# Controllo parametri
 if [[ -z "$VBIAS" ]]; then
-    echo "Errore: devi specificare --vbias <value>"
+    echo "Errore: devi specificare --vbias <valore>"
     usage
 fi
-
 if [[ -z "$ACTION" ]]; then
-    echo "Errore: devi specificare --on oppure --off"
+    echo "Errore: devi specificare --on o --off"
     usage
 fi
 
-# Esecuzione comando
-echo "Setting V1 to ${VBIAS} V..."
+# Imposta tensione
+echo "⚙️  Imposto tensione a ${VBIAS} V..."
 echo "V1 $VBIAS" | nc -w1 -W1 "$host" "$port"
 
+# Accendi/spegni
 if [[ "$ACTION" == "on" ]]; then
-    echo "Switching output ON..."
+    echo "🔌 Accendo l’uscita..."
     echo "OP1 1" | nc -w1 -W1 "$host" "$port"
-    sleep 10
-    echo "Output is ON and V1 is set to ${VBIAS} V."
-else
-    echo "Switching output OFF..."
+    sleep 1
+    echo "✅ Uscita ON – V=${VBIAS} V"
+elif [[ "$ACTION" == "off" ]]; then
+    echo "⏻ Spengo l’uscita..."
     echo "OP1 0" | nc -w1 -W1 "$host" "$port"
-    echo "Output is OFF."
+    echo "✅ Uscita OFF"
 fi
