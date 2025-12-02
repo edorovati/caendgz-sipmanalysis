@@ -19,13 +19,13 @@ public:
     static TF1* multi_gauss(TH1F* hist, int n_peaks_requested, const TString& fit_name = "fit") {
         if (!hist)
             return nullptr;
-        double integral = hist->Integral("width"); // considera il bin width
+        /*double integral = hist->Integral("width"); // considera il bin width
         if (integral > 0) {
             hist->Scale(1.0 / integral);
             std::cout << "[Info] Histogram normalized. Integral = " << hist->Integral("width") << std::endl;
         } else {
             std::cerr << "[Warning] Histogram integral = 0. Skipping normalization." << std::endl;
-        }
+        }*/
 
         // Trova picchi con TSpectrum
         TSpectrum spectrum(n_peaks_requested);
@@ -145,6 +145,47 @@ public:
 
         return qGaussPlusConst;
     }
+    
+    static TF1* FitQGauss(TH1* proj, const char* fitName) {
+        // Creo la funzione di fit con nome passato come argomento
+        TF1* qGauss = new TF1(fitName,
+            [](Double_t* x, Double_t* par) {
+                // par[0] = A, par[1] = mean, par[2] = sigma, par[3] = q1, par[4] = q2
+                return qGaussAsym(x, par);
+            }, 30, 50, 5);
+
+        qGauss->SetNpx(1000);
+        qGauss->SetParNames("A", "mean", "sigma", "q1", "q2");
+
+        // Stima iniziale parametri
+        int maxbin = proj->GetMaximumBin();
+        double A0 = proj->GetMaximum();
+        double sum = 0, m = 0, s2 = 0;
+        for (int b = maxbin - 5; b <= maxbin + 5; ++b) {
+            double x = proj->GetBinCenter(b);
+            double y = proj->GetBinContent(b);
+            sum += y;
+            m += x * y;
+        }
+        m /= sum;
+        for (int b = maxbin - 5; b <= maxbin + 5; ++b) {
+            double x = proj->GetBinCenter(b);
+            double y = proj->GetBinContent(b);
+            s2 += y * TMath::Power(x - m, 2);
+        }
+        double sigma0 = TMath::Sqrt(s2 / sum);
+
+        // Setta parametri iniziali
+        qGauss->SetParameters(A0, m, sigma0, 1.0, 1.3);
+
+        // puoi decidere se fissare q1=1 come nel tuo Fit precedente
+        qGauss->FixParameter(3, 1.0);
+
+        proj->Fit(qGauss, "IMREQ");
+
+        return qGauss;
+    }
+
 
     static std::tuple<double,double,double,double,TF1*> q_gauss_projection(TH1D* hProj){
         if (!hProj || hProj->GetEntries() == 0) return {0,0,0,0,nullptr};

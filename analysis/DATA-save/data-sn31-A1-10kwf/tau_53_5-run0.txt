@@ -1,2 +1,0 @@
-Tau(ns)	Tau_error(ns)	Peak_val
-27.200000	0.027763	5.805165

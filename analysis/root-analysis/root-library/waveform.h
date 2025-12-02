@@ -46,38 +46,55 @@ public:
     }
 
    
-    // Funzione 2: Correzione baseline
-    std::vector<std::pair<std::vector<double>, std::vector<double>>> correctBaseline(
-            const std::vector<std::pair<std::vector<double>, std::vector<double>>>& aligned_waveforms) const
-    {
+
+    std::vector<std::pair<std::vector<double>, std::vector<double>>> correctWaveforms(
+    const std::vector<std::pair<std::vector<double>, std::vector<double>>>& waveforms,
+    double pre_signal_end = 30.0, size_t bunch_size = 1024
+                                                                                      ) {
         std::vector<std::pair<std::vector<double>, std::vector<double>>> corrected_waveforms;
-
-        for (const auto& [time, amp] : aligned_waveforms) {
-            std::vector<double> corrected_amp = amp;
-            // Trova gli indici dove il tempo è <= 35 ns
-            std::vector<double> baseline_window;
-            for (size_t i = 0; i < time.size(); ++i) {
-                if (time[i] <= 30.0) {
-                    baseline_window.push_back(amp[i]);
-                }
-            }
-            if (baseline_window.empty()) {
-                corrected_waveforms.emplace_back(time, corrected_amp);
-                continue;
-            }
-            // Calcola la mediana
-            std::nth_element(baseline_window.begin(), baseline_window.begin() + baseline_window.size() / 2, baseline_window.end());
-            double median = baseline_window[baseline_window.size() / 2];
-
-           
+        size_t n_wf = waveforms.size();
+        size_t n_bunches = (n_wf + bunch_size - 1) / bunch_size;
+        
+        for (size_t b = 0; b < n_bunches; ++b) {
+            size_t start_idx = b * bunch_size;
+            size_t end_idx = std::min(start_idx + bunch_size, n_wf);
             
-            for (auto& a : corrected_amp) {
-                a -= median;
+            if (end_idx - start_idx <= 1) continue; // niente da fare se solo la wf da scartare
+            
+            // --- media del bunch (escludendo la prima waveform) ---
+            std::vector<double> mean_amp = waveforms[start_idx + 1].second;
+            std::vector<double> time_ref = waveforms[start_idx + 1].first;
+            
+            for (size_t wf_idx = start_idx + 2; wf_idx < end_idx; ++wf_idx) {
+                const auto& amp = waveforms[wf_idx].second;
+                for (size_t i = 0; i < mean_amp.size(); ++i)
+                    mean_amp[i] += amp[i];
             }
-
-            corrected_waveforms.emplace_back(time, corrected_amp);
+            
+            for (auto& a : mean_amp) a /= double(end_idx - start_idx - 1);
+            
+            // --- fit pre-signal con pol0 ---
+            std::vector<double> pre_time, pre_amp;
+            for (size_t i = 0; i < time_ref.size(); ++i)
+                if (time_ref[i] <= pre_signal_end) {
+                    pre_time.push_back(time_ref[i]);
+                    pre_amp.push_back(mean_amp[i]);
+                }
+            
+            TGraph g(pre_time.size(), pre_time.data(), pre_amp.data());
+            TF1 fit("fit", "[0]", 0, pre_signal_end);
+            g.Fit(&fit, "Q"); // Q per silenzioso
+            double offset = fit.GetParameter(0);
+            
+            // --- correggi tutte le waveform del bunch (tranne la prima) ---
+            for (size_t wf_idx = start_idx + 1; wf_idx < end_idx; ++wf_idx) {
+                const auto& [time, amp] = waveforms[wf_idx];
+                std::vector<double> corrected_amp = amp;
+                for (auto& a : corrected_amp) a -= offset;
+                corrected_waveforms.emplace_back(time, corrected_amp);
+            }
         }
-
+        
         return corrected_waveforms;
     }
 

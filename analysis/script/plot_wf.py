@@ -94,7 +94,7 @@ def visualizza_waveform(
 
 # === Qui inizia l'esempio di chiamata ===
 
-file_path = "TEMP-2.5Gs-run3-grosso.npz"  # Metti qui il percorso del tuo file .npz
+file_path = "../../data/test/2025_10_30_ONLINEANA/vbias_31.5/run-0_ch1.npz"  # Metti qui il percorso del tuo file .npz
 
 visualizza_waveform(
     file_path,

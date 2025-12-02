@@ -28,15 +28,24 @@ public:
         return c;
     }
 
-    static void SetupPad(bool logx = false, bool logy = false, bool grid = false) {
+    static void SetupPad(bool logx = false, bool logy = false, bool grid = false, bool logz = false) {
         if (logx) gPad->SetLogx();
         else gPad->SetLogx(0);
 
         if (logy) gPad->SetLogy();
         else gPad->SetLogy(0);
 
-        if (grid) gPad->SetGrid();
-        else gPad->SetGrid(0);
+        if (grid) {
+            gPad->SetGridx(1);
+            gPad->SetGridy(1);
+        } else {
+            gPad->SetGridx(0);
+            gPad->SetGridy(0);
+        }
+
+        
+        if (logz) gPad->SetLogz();
+        else gPad->SetLogz(0);
     }
 
     
