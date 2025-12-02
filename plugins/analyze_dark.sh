@@ -68,9 +68,10 @@ python ../analysis/script/dark_transition.py \
   --npz "$INPUT_NPZ" \
   --output "${OUTBASE}.dark_transition.txt" \
   --scanthr \
-  --range 0-20 \
+  --range 0-200 \
   --sign 1 \
-  --step_voltage_mV 0.25 \
+  --lowpass 200e6 \
+  --step_voltage_mV 0.5 \
   --x_start 100 \
   --x_end 987
 
