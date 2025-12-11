@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from PyQt5.QtWidgets import (
     QApplication, QVBoxLayout, QWidget, QPushButton, QLabel, QCheckBox,
-    QHBoxLayout, QSpacerItem, QSizePolicy
+    QHBoxLayout, QSpacerItem, QSizePolicy, QSlider
 )
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -60,12 +60,11 @@ class OscilloscopeApp(QWidget):
 
     # ---------------------- UI Setup ----------------------
     def initUI(self):
-        # Main layout: canvas + side panel
         main_layout = QHBoxLayout()
         side_layout = QVBoxLayout()
 
         self.setWindowTitle("Digitizer Control")
-        self.setGeometry(100, 100, 1000, 600)
+        self.setGeometry(100, 100, 1200, 700)
 
         # Start Acquisition button
         self.button = QPushButton('Start Acquisition')
@@ -77,7 +76,7 @@ class OscilloscopeApp(QWidget):
         freq_layout = QHBoxLayout()
         for freq in [750, 1000, 2500, 5000]:
             btn = QPushButton(f"{freq} MHz", self)
-            btn.setStyleSheet("background-color: #008CBA; color: white; font-size: 12px; padding: 6px;")
+            btn.setStyleSheet("background-color: #008CBA; color: white; font-size: 12px; padding: 4px;")
             btn.clicked.connect(lambda _, f=freq: self.set_frequency(f))
             freq_layout.addWidget(btn)
         side_layout.addLayout(freq_layout)
@@ -111,6 +110,47 @@ class OscilloscopeApp(QWidget):
         self.stop_frame_button.clicked.connect(self.stop_frame)
         side_layout.addWidget(self.stop_frame_button)
 
+        # ------------------ Sliders ------------------
+        # Vertical zoom
+        self.vzoom_label = QLabel("Vertical Zoom: 1x")
+        side_layout.addWidget(self.vzoom_label)
+        self.vzoom_slider = QSlider(Qt.Horizontal)
+        self.vzoom_slider.setMinimum(1)
+        self.vzoom_slider.setMaximum(10)
+        self.vzoom_slider.setValue(1)
+        self.vzoom_slider.valueChanged.connect(self.update_vzoom)
+        side_layout.addWidget(self.vzoom_slider)
+
+        # Vertical shift
+        self.vshift_label = QLabel("Vertical Shift: 0")
+        side_layout.addWidget(self.vshift_label)
+        self.vshift_slider = QSlider(Qt.Horizontal)
+        self.vshift_slider.setMinimum(-2048)
+        self.vshift_slider.setMaximum(2048)
+        self.vshift_slider.setValue(0)
+        self.vshift_slider.valueChanged.connect(self.update_vshift)
+        side_layout.addWidget(self.vshift_slider)
+
+        # Horizontal zoom
+        self.hzoom_label = QLabel("Horizontal Zoom: 1024 samples")
+        side_layout.addWidget(self.hzoom_label)
+        self.hzoom_slider = QSlider(Qt.Horizontal)
+        self.hzoom_slider.setMinimum(128)
+        self.hzoom_slider.setMaximum(1024)
+        self.hzoom_slider.setValue(1024)
+        self.hzoom_slider.valueChanged.connect(self.update_hzoom)
+        side_layout.addWidget(self.hzoom_slider)
+
+        # Horizontal shift
+        self.hshift_label = QLabel("Horizontal Shift: 0")
+        side_layout.addWidget(self.hshift_label)
+        self.hshift_slider = QSlider(Qt.Horizontal)
+        self.hshift_slider.setMinimum(0)
+        self.hshift_slider.setMaximum(1024 - self.hzoom_slider.value())
+        self.hshift_slider.setValue(0)
+        self.hshift_slider.valueChanged.connect(self.update_hshift)
+        side_layout.addWidget(self.hshift_slider)
+
         side_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
         # Canvas + toolbar
@@ -120,10 +160,8 @@ class OscilloscopeApp(QWidget):
         canvas_layout.addWidget(self.toolbar)
         canvas_layout.addWidget(self.canvas)
 
-        # Add layouts to main layout
         main_layout.addLayout(side_layout)
-        main_layout.addLayout(canvas_layout, stretch=1)  # canvas occupies remaining space
-
+        main_layout.addLayout(canvas_layout, stretch=1)
         self.setLayout(main_layout)
         self.canvas.mpl_connect("motion_notify_event", self.toggle_animation)
 
@@ -156,6 +194,7 @@ class OscilloscopeApp(QWidget):
         for ch, color in zip([0, 1], ['yellow', 'cyan']):
             self.lines[ch], = self.ax.plot(self.x_data, np.zeros(1024), label=f'ch-{ch}', color=color)
         self.ax.set_ylim(0, 4096)
+        self.ax.set_xlim(0, 1024)
         self.ax.set_xlabel("Samples", color='white')
         self.ax.set_ylabel("Amplitude", color='white')
         self.ax.set_title("Oscilloscope Data", color='white')
@@ -191,20 +230,47 @@ class OscilloscopeApp(QWidget):
             self.current_frame = (self.current_frame + 1) % len(self.latest_data)
             self.canvas.flush_events()
 
+    # ---------------------- Sliders callbacks ----------------------
+    def update_vzoom(self, value):
+        self.vzoom_label.setText(f"Vertical Zoom: {value}x")
+        mid = 2048 + self.vshift_slider.value()
+        half_range = 2048 / value
+        self.ax.set_ylim(mid - half_range, mid + half_range)
+        self.canvas.draw_idle()
+
+    def update_vshift(self, value):
+        self.vshift_label.setText(f"Vertical Shift: {value}")
+        vzoom = self.vzoom_slider.value()
+        mid = 2048 + value
+        half_range = 2048 / vzoom
+        self.ax.set_ylim(mid - half_range, mid + half_range)
+        self.canvas.draw_idle()
+
+    def update_hzoom(self, value):
+        self.hzoom_label.setText(f"Horizontal Zoom: {value} samples")
+        # Aggiorna limite dello slider di shift
+        max_shift = max(0, 1024 - value)
+        self.hshift_slider.setMaximum(max_shift)
+        if self.hshift_slider.value() > max_shift:
+            self.hshift_slider.setValue(max_shift)
+        self.update_hshift(self.hshift_slider.value())
+
+    def update_hshift(self, value):
+        self.hshift_label.setText(f"Horizontal Shift: {value}")
+        x0 = value
+        x1 = value + self.hzoom_slider.value()
+        self.ax.set_xlim(x0, x1)
+        self.canvas.draw_idle()
+
     # ---------------------- Resize handling ----------------------
     def resizeEvent(self, event):
         super().resizeEvent(event)
-
-        # Canvas dynamic size: maintain 4:3, fit in available space
         available_width = self.canvas.parent().width()
         available_height = self.canvas.parent().height()
-
         new_width = min(available_width, int(available_height * 4 / 3))
         new_height = int(new_width * 3 / 4)
-
         self.canvas.resize(new_width, new_height)
         self.canvas.draw_idle()
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
