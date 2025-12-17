@@ -30,3 +30,7 @@
 *.exe
 *.out
 *.app
+
+#folders and caches
+analysis/python/__pycache__/
+data/

@@ -13,7 +13,7 @@ DO_DARK=false
 DO_LASER=false
 host="aimtti-plh120p-00"
 port=9221
-N_WAVES=2000
+N_WAVES=100000
 
 # === ARGUMENT PARSING ===
 while [[ $# -gt 0 ]]; do
